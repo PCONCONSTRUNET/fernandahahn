@@ -17,10 +17,19 @@ let cachedAppId: string | null = null;
 
 async function fetchAppId(): Promise<string> {
   if (cachedAppId) return cachedAppId;
-  const { data, error } = await supabase.functions.invoke("onesignal-config");
-  if (error || !data?.appId) throw new Error("Falha ao carregar config OneSignal");
-  cachedAppId = data.appId;
-  return data.appId;
+  const envAppId = (import.meta.env.VITE_ONESIGNAL_APP_ID as string | undefined)?.trim();
+  if (envAppId) {
+    cachedAppId = envAppId;
+    return envAppId;
+  }
+  try {
+    const { data, error } = await supabase.functions.invoke("onesignal-config");
+    if (!error && data?.appId) {
+      cachedAppId = data.appId;
+      return data.appId;
+    }
+  } catch {}
+  return "041f606d-7c4d-42ce-8491-d6c358d7bba4";
 }
 
 async function initOneSignal(): Promise<void> {
@@ -29,6 +38,7 @@ async function initOneSignal(): Promise<void> {
     const appId = await fetchAppId();
     await OneSignal.init({
       appId,
+      safari_web_id: (import.meta.env.VITE_ONESIGNAL_SAFARI_WEB_ID as string | undefined)?.trim() || "web.onesignal.auto.38b1a4de-a361-440e-ae28-b71c05790af2",
       allowLocalhostAsSecureOrigin: true,
       serviceWorkerParam: { scope: "/" },
       serviceWorkerPath: "OneSignalSDKWorker.js",

@@ -1,4 +1,4 @@
-﻿-- =====================================================================
+-- =====================================================================
 -- MIGRATION: Estabilidade critica para instancia NANO
 -- Problema: Banco caindo por esgotamento de conexoes (OOM / conn limit)
 -- Solucao: Limites de timeout + configuracoes defensivas para NANO
