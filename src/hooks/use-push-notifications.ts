@@ -42,14 +42,48 @@ async function initOneSignal(): Promise<void> {
       allowLocalhostAsSecureOrigin: true,
       serviceWorkerParam: { scope: "/" },
       serviceWorkerPath: "OneSignalSDKWorker.js",
+      // A boas-vindas é enviada uma única vez por showWelcomeNotificationOnce()
       welcomeNotification: {
-        disable: false,
-        title: "Fernanda Hahn Studio ✨",
-        message: "Notificações ativadas com sucesso! Você receberá confirmações e lembretes aqui.",
+        disable: true,
       },
     } as any);
   })();
   return initPromise;
+}
+
+const PUSH_STATE_EVENT = "push-state-changed";
+const WELCOME_STORAGE_KEY = "push-welcome-sent-v1";
+
+function notifyPushStateChanged() {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(PUSH_STATE_EVENT));
+}
+
+/** Envia UMA única notificação de boas-vindas por dispositivo (dedupe por storage + tag). */
+async function showWelcomeNotificationOnce(playerId: string): Promise<void> {
+  if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+  try {
+    if (localStorage.getItem(WELCOME_STORAGE_KEY) === playerId) return;
+    localStorage.setItem(WELCOME_STORAGE_KEY, playerId);
+  } catch {
+    // storage indisponível: segue só com a tag para deduplicar
+  }
+  const title = "Fernanda Hahn Studio ✨";
+  const options: NotificationOptions = {
+    body: "Notificações ativadas com sucesso! Você receberá confirmações e lembretes aqui.",
+    icon: "/icon-512.png",
+    badge: "/icon-512.png",
+    tag: "welcome-push",
+  };
+  try {
+    if ("serviceWorker" in navigator) {
+      const reg = await navigator.serviceWorker.ready;
+      await reg.showNotification(title, options);
+    } else {
+      new Notification(title, options);
+    }
+  } catch (err) {
+    console.warn("Falha ao exibir boas-vindas:", err);
+  }
 }
 
 function isLovablePreview(): boolean {
@@ -106,6 +140,30 @@ export function usePushNotifications({ role, userId, autoInit = true }: UsePushO
     initOneSignal()
       .then(() => refreshState())
       .catch((e) => console.warn("OneSignal init failed:", e));
+  }, [supported, autoInit, refreshState]);
+
+  // Mantém todas as instâncias do hook (pop-up, botão do perfil, etc.) sincronizadas:
+  // ativar pelo pop-up já deixa o botão do perfil marcado como "ativado".
+  useEffect(() => {
+    if (!supported) return;
+    const onChange = () => { refreshState(); };
+    window.addEventListener(PUSH_STATE_EVENT, onChange);
+
+    let removeSdkListener: (() => void) | null = null;
+    initPromise?.then(() => {
+      try {
+        const handler = () => { refreshState(); };
+        OneSignal.User.PushSubscription.addEventListener("change", handler);
+        removeSdkListener = () => OneSignal.User.PushSubscription.removeEventListener("change", handler);
+      } catch {
+        // ignore
+      }
+    }).catch(() => {});
+
+    return () => {
+      window.removeEventListener(PUSH_STATE_EVENT, onChange);
+      removeSdkListener?.();
+    };
   }, [supported, autoInit, refreshState]);
 
   const savePlayerId = useCallback(
@@ -175,32 +233,8 @@ export function usePushNotifications({ role, userId, autoInit = true }: UsePushO
       await savePlayerId(id);
       await refreshState();
 
-      // Dispara a notificação de boas-vindas imediatamente
-      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-        try {
-          if ("serviceWorker" in navigator && navigator.serviceWorker.controller) {
-            navigator.serviceWorker.ready.then((reg) => {
-              reg.showNotification("Fernanda Hahn Studio ✨", {
-                body: "Notificações ativadas com sucesso! Você receberá confirmações e lembretes aqui.",
-                icon: "/icon-512.png",
-                badge: "/icon-512.png",
-              });
-            }).catch(() => {
-              new Notification("Fernanda Hahn Studio ✨", {
-                body: "Notificações ativadas com sucesso! Você receberá confirmações e lembretes aqui.",
-                icon: "/icon-512.png",
-              });
-            });
-          } else {
-            new Notification("Fernanda Hahn Studio ✨", {
-              body: "Notificações ativadas com sucesso! Você receberá confirmações e lembretes aqui.",
-              icon: "/icon-512.png",
-            });
-          }
-        } catch (err) {
-          console.warn("Welcome notification triggered fallback:", err);
-        }
-      }
+      await showWelcomeNotificationOnce(id);
+      notifyPushStateChanged();
 
       toast.success("🔔 Notificações ativadas!");
       return true;
@@ -225,6 +259,7 @@ export function usePushNotifications({ role, userId, autoInit = true }: UsePushO
           .eq("player_id", id);
       }
       await refreshState();
+      notifyPushStateChanged();
       toast.success("Notificações desativadas.");
     } catch (e) {
       console.error(e);
