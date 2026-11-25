@@ -19,8 +19,6 @@ import {
   toLocalDateISO,
   notifyCaixaUpdated,
 } from "@/lib/caixa";
-import { sendWhatsAppViaApi } from "@/lib/notify-webhook";
-import WhatsAppIcon from "@/components/icons/WhatsAppIcon";
 
 interface Agendamento {
   id: string;
@@ -44,18 +42,11 @@ interface Agendamento {
   data_venda?: string | null;
 }
 
-interface ClienteWpp {
-  id: string;
-  nome: string;
-  whatsapp: string;
-}
-
 interface Props {
   agendamentos: Agendamento[];
   getClientName: (userId: string, clienteNome?: string | null) => string;
   onUpdate?: () => void;
   onEdit?: (ag: any) => void;
-  clientes?: ClienteWpp[];
 }
 
 const formatCurrency = (v: number | string | null | undefined) => {
@@ -109,7 +100,7 @@ interface GroupedFaturasResult {
   saidas: any[];
 }
 
-const PagamentosTab = ({ agendamentos, getClientName, onUpdate, onEdit, clientes = [] }: Props) => {
+const PagamentosTab = ({ agendamentos, getClientName, onUpdate, onEdit }: Props) => {
   const { confirm } = useConfirm();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("todos");
@@ -117,55 +108,7 @@ const PagamentosTab = ({ agendamentos, getClientName, onUpdate, onEdit, clientes
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [sortField, setSortField] = useState<SortField>("data");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
-  const [wppLoadingKey, setWppLoadingKey] = useState<string | null>(null);
 
-  const handleEnviarCobrancaWpp = async (group: ClienteGroup) => {
-    // Busca o whatsapp do cliente pelo userId
-    const clienteData = clientes.find(c => c.id === group.userId);
-    const numero = clienteData?.whatsapp?.replace(/\D/g, "") || "";
-    if (!numero || numero.length < 10) {
-      toast.error("Cliente não tem WhatsApp cadastrado");
-      return;
-    }
-
-    const pendentes = group.faturas.filter(
-      f => f.fatura_tipo === "pendente" && !["cancelado", "falta"].includes(f.status)
-    );
-    if (pendentes.length === 0) {
-      toast.error("Nenhuma fatura pendente para este cliente");
-      return;
-    }
-
-    const totalOriginal = group.totalPendente + group.totalPago;
-    const linhasFaturas = pendentes
-      .map(f => `  • ${f.servico}${f.variacao ? ` · ${f.variacao}` : ""} — ${formatCurrency(Number(f.valor_fatura))}  (${formatDate(f.data_fatura)})`)
-      .join("\n");
-
-    const mensagem =
-`Olá, ${group.clienteNome}! 👋
-
-Passando para informar sobre sua fatura no *Fernanda Hahn*:
-
-💰 *Valor total:* ${formatCurrency(totalOriginal)}
-✅ *Valor já pago:* ${formatCurrency(group.totalPago)}
-⚠️ *Saldo pendente:* ${formatCurrency(group.totalPendente)}
-
-📋 *Faturas em aberto:*
-${linhasFaturas}
-
-Qualquer dúvida, estamos à disposição! 🙏`;
-
-    setWppLoadingKey(group.key);
-    try {
-      const result = await sendWhatsAppViaApi(numero, mensagem);
-      if (!result.ok) throw new Error(result.error || "Erro ao enviar");
-      toast.success(`✅ Cobrança enviada para ${group.clienteNome} via WhatsApp!`);
-    } catch (err: any) {
-      toast.error(err.message || "Erro ao enviar WhatsApp");
-    } finally {
-      setWppLoadingKey(null);
-    }
-  };
   const [dateFilter, setDateFilter] = useState<string>("");
 
   // Smart payment modal state
@@ -1182,27 +1125,6 @@ Qualquer dúvida, estamos à disposição! 🙏`;
                   </button>
                 )}
 
-                {/* Botão WhatsApp — cobrar via mensagem */}
-                {group.countPendente > 0 && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleEnviarCobrancaWpp(group);
-                    }}
-                    disabled={wppLoadingKey === group.key}
-                    className="shrink-0 flex flex-col sm:flex-row items-center gap-0.5 sm:gap-1.5 border-l border-primary-foreground/[0.07] px-2.5 py-2 hover:bg-green-500/10 transition-all group disabled:opacity-50"
-                    title="Enviar cobrança via WhatsApp"
-                  >
-                    {wppLoadingKey === group.key ? (
-                      <div className="h-3.5 w-3.5 border-2 border-green-400/40 border-t-green-400 rounded-full animate-spin" />
-                    ) : (
-                      <WhatsAppIcon className="h-3.5 w-3.5 text-green-500/80 group-hover:text-green-400 transition-colors" />
-                    )}
-                    <span className="font-body text-[9.5px] font-bold text-green-500/80 group-hover:text-green-400 transition-colors">
-                      {wppLoadingKey === group.key ? "..." : "Cobrar"}
-                    </span>
-                  </button>
-                )}
               </div>
 
               {/* Group faturas */}

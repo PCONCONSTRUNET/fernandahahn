@@ -98,7 +98,7 @@ Deno.serve(async (req) => {
                 await supabase.functions.invoke("send-push", {
                   body: {
                     role: "admin",
-                    title: ag.origem === "whatsapp_bot" ? "🔔 Novo Agendamento (WhatsApp)" : "🔔 Novo Agendamento!",
+                    title: "🔔 Novo Agendamento!",
                     message: `${ag.cliente_nome || "Cliente"} — ${ag.servico} em ${ag.data_agendamento} às ${ag.horario}`,
                     url: "/admin",
                   },
@@ -107,30 +107,23 @@ Deno.serve(async (req) => {
                 console.warn("send-push (novo) failed:", e);
               }
 
-              // WhatsApp de confirmação pro cliente
-              try {
-                const { data: prof } = await supabase
-                  .from("profiles")
-                  .select("nome, whatsapp")
-                  .eq("id", ag.user_id)
-                  .maybeSingle();
-                if (prof?.whatsapp) {
-                  let numero = prof.whatsapp.replace(/\D/g, "").replace(/^0+/, "");
-                  if (numero.length === 10 || numero.length === 11) {
-                    numero = `55${numero}`;
-                  }
+              // Push de confirmação pro cliente
+              if (ag.user_id) {
+                try {
                   const [y, mo, d] = String(ag.data_agendamento).split("-");
                   const dataFmt = `${d}/${mo}/${y}`;
-                  const nome = prof.nome || ag.cliente_nome || "";
-                  const mensagem = `✅ *Agendamento Confirmado com Fernanda Hahn!* 🌸\n\nOlá ${nome}, recebemos a confirmação do seu pagamento e do agendamento para o dia ${dataFmt} às ${ag.horario}. Te esperamos!`;
-                  fetch(Deno.env.get("WHATSAPP_WEBHOOK_URL") || "http://217.76.50.145:3001/webhook/notificacao", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ numero, mensagem, token: Deno.env.get("WHATSAPP_WEBHOOK_TOKEN") || "fernandahahn" }),
-                  }).catch((e) => console.log("notify webhook failed", e));
+                  await supabase.functions.invoke("send-push", {
+                    body: {
+                      role: "cliente",
+                      user_id: ag.user_id,
+                      title: "✅ Agendamento Confirmado!",
+                      message: `Recebemos seu pagamento! Te esperamos em ${dataFmt} às ${ag.horario} para ${ag.servico}.`,
+                      url: "/",
+                    },
+                  });
+                } catch (e) {
+                  console.warn("send-push (cliente confirm) failed:", e);
                 }
-              } catch (e) {
-                console.warn("whatsapp confirm failed:", e);
               }
             }
           }

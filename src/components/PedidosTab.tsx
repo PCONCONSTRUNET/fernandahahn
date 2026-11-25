@@ -6,7 +6,6 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { supabase, isSupabaseConfigured } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { notifyAgendamentoConfirmadoById, notifyLembreteById } from "@/lib/notify-webhook";
 import WhatsAppIcon from "@/components/icons/WhatsAppIcon";
 import { useConfirm } from "@/contexts/ConfirmContext";
 import { LoadMoreButton } from "@/components/ui/load-more-button";
@@ -376,15 +375,6 @@ const PedidosTab = ({
     await supabase.from("agendamentos").update({ status }).eq("id", id);
     onUpdate();
     toast.success(`Status atualizado para ${status}`);
-    if (status === "confirmado") {
-      notifyAgendamentoConfirmadoById(id);
-    } else if (status === "cancelado") {
-      notifyLembreteById(id, "cancelamento");
-    } else if (status === "concluido") {
-      notifyLembreteById(id, "comparecimento");
-      // schedule a follow-up message; respects ativo flag in DB
-      notifyLembreteById(id, "pos_atendimento");
-    }
   };
 
   const deleteAgendamento = (id: string) => {
@@ -1183,12 +1173,6 @@ const PedidosTab = ({
                       </button>
                     </div>
                     <div className="flex items-center gap-1.5 flex-wrap mt-1">
-                      {a.origem === "whatsapp_bot" && (
-                        <span title="Via WhatsApp" className="inline-flex shrink-0 items-center gap-0.5 rounded-full border border-green-500/30 bg-green-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-green-400">
-                          <WhatsAppIcon className="h-2.5 w-2.5" />
-                          WA
-                        </span>
-                      )}
                       {paymentBadge(a)}
                       {cInfo.metrics.saldoDevedor > 0.01 && (
                         <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/35 bg-amber-500/15 px-2 py-0.5 font-body text-[9.5px] font-semibold text-amber-300">
@@ -1571,9 +1555,9 @@ const PedidosTab = ({
               const whats = getClienteWhatsapp(a.user_id);
               const restante = Number(a.valor) - Number(a.valor_pago || 0) - Number(a.valor_desconto_credito || 0);
               const sinal = isSinalPago(a);
-              const origemLabel = a.origem === "whatsapp_bot" ? "WhatsApp" : a.origem === "presencial" ? "Presencial" : "App";
+              const origemLabel = a.origem === "presencial" ? "Presencial" : "App";
               const isExpanded = expandedDevedorId === a.id;
-              const tipoAgendamento = a.origem === "whatsapp_bot" ? "Agendado via WhatsApp" : a.origem === "presencial" ? "Agendado presencialmente" : "Agendado pelo app";
+              const tipoAgendamento = a.origem === "presencial" ? "Agendado presencialmente" : "Agendado pelo app";
               return (
                 <div key={a.id} className="rounded-xl border border-primary-foreground/[0.08] bg-primary-foreground/[0.03] overflow-hidden">
                   <button

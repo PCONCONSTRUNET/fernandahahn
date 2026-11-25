@@ -8,7 +8,7 @@ import {
   formatCurrencyValue,
   parseCurrencyStr,
 } from "@/lib/utils";
-import { normalizeWhatsappNumber } from "@/lib/notify-webhook";
+import { normalizeWhatsappNumber } from "@/lib/whatsapp";
 import WhatsAppIcon from "@/components/icons/WhatsAppIcon";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {

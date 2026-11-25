@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { User, Calendar, Clock, LogOut, X, Sparkles, Cake, TrendingUp, Award, Pencil, Check, Heart, FileText, Download, Star } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { notifyLembreteById } from "@/lib/notify-webhook";
 import { sendPush } from "@/lib/push-notify";
 import PushToggle from "@/components/PushToggle";
 import RatingModal from "@/components/RatingModal";
@@ -118,7 +117,6 @@ const ProfileScreen = ({ onBack, onLogout }: ProfileScreenProps) => {
 
     await supabase.from("agendamentos").update({ status: "cancelado" }).eq("id", id);
     setAgendamentos(prev => prev.map(a => a.id === id ? { ...a, status: "cancelado" } : a));
-    notifyLembreteById(id, "cancelamento");
 
     // Push pro admin avisando do cancelamento
     if (ag) {

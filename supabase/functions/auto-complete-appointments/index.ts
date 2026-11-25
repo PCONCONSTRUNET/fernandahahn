@@ -5,42 +5,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const WEBHOOK_URL = Deno.env.get("WHATSAPP_WEBHOOK_URL") || "http://217.76.50.145:3001/webhook/notificacao";
-const WEBHOOK_TOKEN = Deno.env.get("WHATSAPP_WEBHOOK_TOKEN") || "fernandahahn";
-const SITE_URL = Deno.env.get("PUBLIC_SITE_URL") || "https://fernandahahn.com.br";
-
-const fallbackMessages: Record<string, string> = {
-  comparecimento: "💖 Obrigada por comparecer, {nome}! Esperamos te ver novamente em breve.",
-  pos_atendimento: "⭐ Olá {nome}, como foi seu atendimento? Avalie em: {link_avaliacao}",
-};
-
-const formatDate = (iso: string) => {
-  try {
-    const [y, m, d] = iso.split("-");
-    return `${d}/${m}/${y}`;
-  } catch {
-    return iso;
-  }
-};
-
-const interpolate = (template: string, p: { nome: string; data: string; horario: string; servico?: string; link_avaliacao?: string }) => {
-  const map: Record<string, string> = {
-    nome: p.nome || "cliente",
-    cliente: p.nome || "cliente",
-    nome_do_cliente: p.nome || "cliente",
-    data: formatDate(p.data),
-    data_do_agendamento: formatDate(p.data),
-    horario: p.horario,
-    hora: p.horario,
-    tempo: p.horario,
-    servico: p.servico || "",
-    link_avaliacao: p.link_avaliacao || "",
-    link: p.link_avaliacao || "",
-  };
-  let out = template.replace(/\{([a-zA-Z_]+)\}/g, (_, k) => map[k.toLowerCase()] ?? `{${k}}`);
-  out = out.replace(/\[([a-zA-Z_]+)\]/g, (_, k) => map[k.toLowerCase()] ?? `[${k}]`);
-  return out;
-};
+const SITE_URL = Deno.env.get("PUBLIC_SITE_URL") || "https://fernandahahn.vercel.app";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -63,7 +28,7 @@ Deno.serve(async (req) => {
 
     const { data: agendamentos, error } = await supabase
       .from("agendamentos")
-      .select("id, data_agendamento, horario, duracao_minutos, servico, cliente_nome, user_id, origem")
+      .select("id, data_agendamento, horario, duracao_minutos, servico, cliente_nome, user_id")
       .eq("status", "confirmado")
       .lte("data_agendamento", todayStr);
 
@@ -91,51 +56,21 @@ Deno.serve(async (req) => {
 
       if (updateError) throw updateError;
 
-      // Load lembrete templates + toggles
-      const { data: configs } = await supabase
-        .from("configuracoes_lembretes")
-        .select("tipo, ativo, mensagem")
-        .in("tipo", ["comparecimento", "pos_atendimento"]);
-
-      const cfgMap = new Map((configs || []).map((c: any) => [c.tipo, c]));
-
-      // Fire webhooks for each completed appointment (app + assistente)
+      // Dispara push de avaliação pós-atendimento para clientes com conta
       for (const a of toComplete) {
-        if (a.origem !== "app" && a.origem !== "whatsapp_bot") continue;
-        const { data: prof } = await supabase
-          .from("profiles")
-          .select("nome, whatsapp")
-          .eq("id", a.user_id)
-          .maybeSingle();
-
-        let numero = (prof?.whatsapp || "").replace(/\D/g, "").replace(/^0+/, "");
-        if (numero.length === 10 || numero.length === 11) {
-          numero = `55${numero}`;
-        }
-        if (!numero) continue;
-
-        const nome = a.cliente_nome || prof?.nome || "";
-        const link_avaliacao = `${SITE_URL}/avaliar`;
-
-        for (const tipo of ["comparecimento", "pos_atendimento"] as const) {
-          const cfg: any = cfgMap.get(tipo);
-          if (cfg && cfg.ativo === false) continue;
-          // Para agendamentos via assistente, só envia o pós-atendimento (avaliação)
-          if (a.origem === "whatsapp_bot" && tipo !== "pos_atendimento") continue;
-          const template = (cfg?.mensagem && cfg.mensagem.trim()) || fallbackMessages[tipo];
-          const mensagem = interpolate(template, {
-            nome,
-            data: a.data_agendamento,
-            horario: a.horario,
-            servico: a.servico || undefined,
-            link_avaliacao,
+        if (!a.user_id) continue;
+        try {
+          await supabase.functions.invoke("send-push", {
+            body: {
+              role: "cliente",
+              user_id: a.user_id,
+              title: "⭐ Como foi seu atendimento?",
+              message: `Obrigado pela visita${a.cliente_nome ? `, ${a.cliente_nome}` : ""}! Toque para avaliar seu ${a.servico || "atendimento"}.`,
+              url: `${SITE_URL}/avaliar`,
+            },
           });
-
-          fetch(WEBHOOK_URL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ numero, mensagem, token: WEBHOOK_TOKEN }),
-          }).catch((e) => console.log(`[webhook:${tipo}] erro`, e));
+        } catch (e) {
+          console.warn("[auto-complete] send-push falhou:", e);
         }
       }
     }

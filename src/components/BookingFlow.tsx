@@ -5,7 +5,6 @@ import pixIcon from "@/assets/pix-icon.png";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { notifyAgendamentoConfirmado } from "@/lib/notify-webhook";
 import { sendPush, showLocalNotification } from "@/lib/push-notify";
 
 interface BookingFlowProps {
@@ -475,12 +474,6 @@ const BookingFlow = ({ service, variation, onBack, onConfirm }: BookingFlowProps
         .select("nome, whatsapp")
         .eq("id", user.id)
         .maybeSingle();
-      notifyAgendamentoConfirmado({
-        numero: prof?.whatsapp || "",
-        nome: prof?.nome || user.user_metadata?.nome || "",
-        data: selectedDate,
-        horario: selectedTime,
-      });
       const formaTxt = forma === "pix" ? "(PIX online)" : "(pagar na recepção)";
       void sendPush({
         role: "admin",

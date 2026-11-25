@@ -207,7 +207,6 @@ describe("PagamentosTab layout mobile", () => {
             },
           ]}
           getClientName={(_, nome) => nome || "Cliente"}
-          clientes={[{ id: "u1", nome: "Carla Dias", whatsapp: "51999990000" }]}
         />
       </ConfirmProvider>
     );
@@ -215,7 +214,7 @@ describe("PagamentosTab layout mobile", () => {
     expect(screen.getByText("Devedoras")).toBeInTheDocument();
     expect(screen.getByText("Carla Dias")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Receber$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Cobrar$/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Cobrar$/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Cancelados/i })).toBeInTheDocument();
   });
 
@@ -248,7 +247,6 @@ describe("PagamentosTab layout mobile", () => {
         <PagamentosTab
           agendamentos={pendingAgs}
           getClientName={(_, nome) => nome || "Cliente"}
-          clientes={[{ id: "u-parc", nome: "Fernanda Silva", whatsapp: "51999991111" }]}
         />
         <CaixaTab
           agendamentos={pendingAgs}
@@ -300,7 +298,6 @@ describe("PagamentosTab layout mobile", () => {
         <PagamentosTab
           agendamentos={manyAgs}
           getClientName={(_, nome) => nome || "Cliente"}
-          clientes={manyAgs.map((a) => ({ id: a.user_id, nome: a.cliente_nome, whatsapp: "51999990000" }))}
         />
       </ConfirmProvider>
     );

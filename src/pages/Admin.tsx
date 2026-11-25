@@ -3,17 +3,17 @@ import { parseCurrencyStr, formatCurrencyMask, formatCurrencyValue, formatWhatsa
 import { motion, useAnimation } from "framer-motion";
 import { toast } from "sonner";
 import { supabase, isSupabaseConfigured, SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from "@/integrations/supabase/client";
-import { notifyAgendamentoConfirmadoById, notifyLembreteById, normalizeWhatsappNumber } from "@/lib/notify-webhook";
+import { normalizeWhatsappNumber } from "@/lib/whatsapp";
 import { persistAppointmentPayment } from "@/lib/caixa";
 import { sendPush } from "@/lib/push-notify";
 import {
   BarChart3, Calendar, Users, Clock, LogOut, Search,
-  X, Edit2, Trash2, Plus, Minus, Save, CheckCircle, Bell, MessageSquare,
+  X, Edit2, Trash2, Plus, Minus, Save, CheckCircle, Bell,
   UserX, DollarSign, CreditCard, ChevronLeft, ChevronRight, Receipt, ClipboardList, Wallet, Timer, PlusCircle, Menu,
   Sparkles, Folder, Filter, TrendingUp, Power, Eye, EyeOff, ChevronUp, ChevronDown, Loader2
 } from "lucide-react";
 import {
-  Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetDescription
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger
 } from "@/components/ui/sheet";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import PlusButton from "@/components/ui/plus-button";
@@ -52,7 +52,6 @@ interface Agendamento {
   observacao?: string | null;
 }
 interface Profile { id: string; nome: string; whatsapp: string; cpf?: string | null; created_at: string; credito_saldo?: number | null; }
-interface LembreteConfig { id: string; tipo: string; ativo: boolean; mensagem: string; horas_antes: number; }
 
 type Tab = "dashboard" | "agendamentos" | "pedidos" | "clientes" | "horarios" | "servicos_app" | "caixa" | "pagamentos" | "gastos" | "gateway" | "avaliacoes";
 
@@ -81,164 +80,6 @@ const shiftDate = (dateKey: string, days: number) => {
   const d = parseDateKey(dateKey);
   d.setDate(d.getDate() + days);
   return getDateKey(d);
-};
-
-// ─── Lembretes Hub (Sheet lateral) ───
-const LembretesHub = () => {
-  const [configs, setConfigs] = useState<LembreteConfig[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editMsg, setEditMsg] = useState("");
-  const [editHoras, setEditHoras] = useState("");
-
-  const tipoLabels: Record<string, { label: string; icon: string; desc: string }> = {
-    confirmacao: { label: "Confirmação", icon: "✅", desc: "Enviado ao confirmar agendamento" },
-    lembrete: { label: "Lembrete", icon: "⏰", desc: "Enviado antes do atendimento" },
-    cancelamento: { label: "Cancelamento", icon: "❌", desc: "Enviado ao cancelar agendamento" },
-    comparecimento: { label: "Comparecimento", icon: "💖", desc: "Enviado após o atendimento" },
-    pos_atendimento: { label: "Pós-Atendimento", icon: "⭐", desc: "Feedback após atendimento" },
-  };
-
-  useEffect(() => {
-    (supabase as any)
-      .from("configuracoes_lembretes")
-      .select("*")
-      .order("created_at")
-      .then(({ data }: any) => {
-        if (data) setConfigs(data.map((d: any) => ({ id: d.id, tipo: d.tipo, ativo: d.ativo, mensagem: d.mensagem, horas_antes: d.horas_antes })));
-      })
-      .catch((err: any) => console.error("Erro ao carregar lembretes:", err))
-      .finally(() => setLoading(false));
-  }, []);
-
-  const toggleAtivo = async (id: string) => {
-    const c = configs.find(c => c.id === id);
-    if (!c) return;
-    await (supabase as any).from("configuracoes_lembretes").update({ ativo: !c.ativo, updated_at: new Date().toISOString() }).eq("id", id);
-    setConfigs(prev => prev.map(c => c.id === id ? { ...c, ativo: !c.ativo } : c));
-  };
-
-  const startEdit = (c: LembreteConfig) => {
-    setEditingId(c.id);
-    setEditMsg(c.mensagem);
-    setEditHoras(c.horas_antes.toString());
-  };
-
-  const saveEdit = async () => {
-    if (!editingId) return;
-    setSaving(true);
-    await (supabase as any).from("configuracoes_lembretes").update({
-      mensagem: editMsg, horas_antes: Number(editHoras), updated_at: new Date().toISOString(),
-    }).eq("id", editingId);
-    setConfigs(prev => prev.map(c => c.id === editingId ? { ...c, mensagem: editMsg, horas_antes: Number(editHoras) } : c));
-    setEditingId(null);
-    setSaving(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  };
-
-  if (loading) return <p className="font-body text-[13px] text-primary-foreground/30 text-center py-12">Carregando...</p>;
-
-  return (
-    <div className="flex flex-col h-full">
-      <SheetHeader className="px-5 pt-5 pb-4 border-b border-primary-foreground/[0.06]">
-        <SheetTitle className="font-heading text-[16px] font-semibold text-primary-foreground flex items-center gap-2">
-          <Bell className="w-4 h-4 text-gold" />
-          Configurações de Lembretes
-        </SheetTitle>
-        <SheetDescription className="font-body text-[11px] text-primary-foreground/35">
-          Configure mensagens automáticas para cada etapa do agendamento
-        </SheetDescription>
-      </SheetHeader>
-
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-        {configs.map(c => {
-          const info = tipoLabels[c.tipo] || { label: c.tipo, icon: "📌", desc: "" };
-          return (
-            <div key={c.id} className={`rounded-2xl border transition-all ${c.ativo ? "bg-primary-foreground/[0.03] border-primary-foreground/[0.08]" : "bg-primary-foreground/[0.01] border-primary-foreground/[0.04] opacity-60"}`}>
-              <div className="p-4">
-                <div className="flex items-center justify-between mb-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[16px]">{info.icon}</span>
-                    <span className="font-body text-[13px] font-medium text-primary-foreground">{info.label}</span>
-                  </div>
-                  <button
-                    onClick={() => toggleAtivo(c.id)}
-                    className={`w-10 h-6 rounded-full relative transition-all duration-200 ${c.ativo ? "bg-gold" : "bg-primary-foreground/10"}`}
-                  >
-                    <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all duration-200 ${c.ativo ? "left-4" : "left-0.5"}`} />
-                  </button>
-                </div>
-                <p className="font-body text-[10px] text-primary-foreground/30 mb-2">{info.desc}</p>
-
-                {editingId === c.id ? (
-                  <div className="space-y-2 mt-2">
-                    <textarea
-                      value={editMsg}
-                      onChange={e => setEditMsg(e.target.value)}
-                      rows={3}
-                      className="w-full px-3 py-2 rounded-xl bg-primary-foreground/[0.05] border border-primary-foreground/[0.08] text-primary-foreground font-body text-[12px] placeholder:text-primary-foreground/20 focus:outline-none focus:ring-2 focus:ring-gold/20 resize-none"
-                    />
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1">
-                        <label className="font-body text-[10px] text-primary-foreground/30 mb-1 block">Horas antes</label>
-                        <input
-                          type="number"
-                          value={editHoras}
-                          onChange={e => setEditHoras(e.target.value)}
-                          min="0"
-                          className="w-full px-3 py-2 rounded-xl bg-primary-foreground/[0.05] border border-primary-foreground/[0.08] text-primary-foreground font-body text-[12px] focus:outline-none focus:ring-2 focus:ring-gold/20"
-                        />
-                      </div>
-                      <div className="flex gap-1 pt-4">
-                        <button onClick={saveEdit} disabled={saving} className="p-2 rounded-xl bg-gold/10 text-gold hover:bg-gold/20 transition-all">
-                          <Save className="w-3.5 h-3.5" />
-                        </button>
-                        <button onClick={() => setEditingId(null)} className="p-2 rounded-xl bg-primary-foreground/[0.05] text-primary-foreground/30 hover:text-primary-foreground/50 transition-all">
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="mt-2">
-                    <div className="flex items-start gap-2 p-2.5 rounded-xl bg-primary-foreground/[0.02] border border-primary-foreground/[0.04]">
-                      <MessageSquare className="w-3 h-3 text-primary-foreground/20 mt-0.5 shrink-0" />
-                      <p className="font-body text-[11px] text-primary-foreground/50 leading-relaxed">{c.mensagem}</p>
-                    </div>
-                    <div className="flex items-center justify-between mt-2">
-                      {c.horas_antes > 0 ? (
-                        <span className="font-body text-[10px] text-gold/60">{c.horas_antes}h antes</span>
-                      ) : (
-                        <span className="font-body text-[10px] text-primary-foreground/25">Imediato</span>
-                      )}
-                      <button onClick={() => startEdit(c)} className="p-1.5 rounded-lg hover:bg-primary-foreground/[0.06] text-primary-foreground/25 hover:text-primary-foreground/50 transition-all">
-                        <Edit2 className="w-3 h-3" />
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {saved && (
-        <div className="px-4 py-3 border-t border-primary-foreground/[0.06]">
-          <p className="font-body text-[11px] text-green-500 text-center">✓ Configuração salva com sucesso</p>
-        </div>
-      )}
-
-      <div className="px-4 py-3 border-t border-primary-foreground/[0.06]">
-        <p className="font-body text-[10px] text-primary-foreground/25 leading-relaxed text-center">
-          💡 Os lembretes serão enviados via WhatsApp automaticamente conforme a configuração.
-        </p>
-      </div>
-    </div>
-  );
 };
 
 // ─── Password Gate ───
@@ -679,7 +520,6 @@ const AdminPanel = ({ onLogout }: { onLogout: () => void }) => {
   // Manual registration state
   const [showManualRegister, setShowManualRegister] = useState(false);
   const [detalheAgendamento, setDetalheAgendamento] = useState<Agendamento | null>(null);
-  const [sendingConfirmacaoId, setSendingConfirmacaoId] = useState<string | null>(null);
   const [manualServicos, setManualServicos] = useState<{ id: string; nome: string; preco: number; duracao_minutos: number; categoria: string }[]>([]);
 
   // Load services for manual registration
@@ -1032,11 +872,6 @@ const AdminPanel = ({ onLogout }: { onLogout: () => void }) => {
     const ag = agendamentos.find((a) => a.id === id);
     if (status === "confirmado") {
       toast.success("Agendamento marcado como confirmado");
-      void notifyAgendamentoConfirmadoById(id).then((res) => {
-        if (res && !res.ok && !res.skipped) {
-          toast.error(`Falha ao enviar confirmação via WhatsApp: ${res.error || "tente reenviar nos detalhes"}`);
-        }
-      });
       if (ag?.user_id) {
         sendPush({
           role: "cliente",
@@ -1048,7 +883,6 @@ const AdminPanel = ({ onLogout }: { onLogout: () => void }) => {
       }
     } else if (status === "cancelado") {
       toast.success("Agendamento cancelado");
-      notifyLembreteById(id, "cancelamento");
       // Push cliente
       if (ag?.user_id) {
         sendPush({
@@ -1060,8 +894,6 @@ const AdminPanel = ({ onLogout }: { onLogout: () => void }) => {
       }
     } else if (status === "concluido") {
       toast.success("Atendimento concluído!");
-      notifyLembreteById(id, "comparecimento");
-      notifyLembreteById(id, "pos_atendimento");
     } else if (status === "falta") {
       toast.success("Marcado como falta");
     }
@@ -1530,14 +1362,6 @@ const AdminPanel = ({ onLogout }: { onLogout: () => void }) => {
 
         toast.success("Atendimento registrado com sucesso!");
         setShowManualRegister(false);
-        void notifyAgendamentoConfirmadoById((data as Agendamento).id).then((res) => {
-          if (!res) return;
-          if (res.ok) {
-            toast.success("Confirmação enviada para a cliente via WhatsApp!");
-          } else if (!res.skipped) {
-            toast.error(`Atendimento salvo, mas o WhatsApp via API falhou: ${res.error || "use o botão nos detalhes do agendamento"}`);
-          }
-        });
         sendPush({
           role: "admin",
           title: "🔔 Novo Agendamento!",
@@ -1549,24 +1373,6 @@ const AdminPanel = ({ onLogout }: { onLogout: () => void }) => {
       toast.error("Erro ao registrar: " + (err.message || "Tente novamente"));
     }
     setManualSaving(false);
-  };
-
-  const handleEnviarConfirmacaoWpp = async (ag: Agendamento) => {
-    setSendingConfirmacaoId(ag.id);
-    try {
-      const res = await notifyAgendamentoConfirmadoById(ag.id, { force: true });
-      if (res.ok) {
-        toast.success("Mensagem de confirmação enviada via WhatsApp!");
-      } else if (res.reason === "NO_NUMBER") {
-        toast.error("Cliente não possui número de WhatsApp cadastrado.");
-      } else {
-        toast.error(res.error || "Não foi possível enviar a confirmação via API.");
-      }
-    } catch (err: any) {
-      toast.error(err?.message || "Erro ao enviar confirmação via API.");
-    } finally {
-      setSendingConfirmacaoId(null);
-    }
   };
 
 
@@ -1693,17 +1499,6 @@ const AdminPanel = ({ onLogout }: { onLogout: () => void }) => {
           ))}
         </nav>
         <div className="px-3 py-3 border-t border-primary-foreground/[0.06] space-y-1">
-          <Sheet>
-            <SheetTrigger asChild>
-              <button className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 font-body text-[13px] text-primary-foreground/40 hover:bg-gold/10 hover:text-gold transition-all">
-                <Bell className="h-4 w-4 shrink-0" />
-                Lembretes
-              </button>
-            </SheetTrigger>
-            <SheetContent side="right" className="w-[calc(100vw-0.75rem)] max-w-[22rem] overflow-x-hidden overflow-y-auto border-primary-foreground/[0.06] bg-charcoal p-0">
-              <LembretesHub />
-            </SheetContent>
-          </Sheet>
           <button onClick={onLogout} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 font-body text-[13px] text-rose/60 hover:bg-rose/10 hover:text-rose transition-all">
             <LogOut className="h-4 w-4 shrink-0" />
             Sair
@@ -1878,16 +1673,6 @@ const AdminPanel = ({ onLogout }: { onLogout: () => void }) => {
               </div>
             </div>
             <div className="flex items-center gap-1 shrink-0">
-              <Sheet>
-                <SheetTrigger asChild>
-                  <button className="flex h-11 w-11 items-center justify-center rounded-2xl text-primary-foreground/40 transition-all hover:bg-gold/10 hover:text-gold">
-                    <Bell className="h-4 w-4" />
-                  </button>
-                </SheetTrigger>
-                <SheetContent side="right" className="w-[calc(100vw-0.75rem)] max-w-[22rem] overflow-x-hidden overflow-y-auto border-primary-foreground/[0.06] bg-charcoal p-0">
-                  <LembretesHub />
-                </SheetContent>
-              </Sheet>
               <button onClick={onLogout} className="flex h-11 w-11 items-center justify-center rounded-2xl text-rose/60 transition-all hover:bg-rose/10 hover:text-rose">
                 <LogOut className="h-4 w-4" />
               </button>
@@ -2518,24 +2303,6 @@ const AdminPanel = ({ onLogout }: { onLogout: () => void }) => {
                           </p>
                         </div>
 
-                        {a.status !== "cancelado" && a.status !== "falta" && (
-                          <button
-                            type="button"
-                            onClick={() => handleEnviarConfirmacaoWpp(a)}
-                            disabled={sendingConfirmacaoId === a.id}
-                            className="w-full flex items-center justify-center gap-2 rounded-2xl border border-[#25d366]/30 bg-[#25d366]/10 px-4 py-2.5 font-body text-[12px] font-medium text-[#25d366] hover:bg-[#25d366]/20 transition-all disabled:opacity-50"
-                          >
-                            {sendingConfirmacaoId === a.id ? (
-                              <>
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Enviando confirmação...
-                              </>
-                            ) : (
-                              <>
-                                <WhatsAppIcon className="h-3.5 w-3.5" /> Enviar confirmação via WhatsApp
-                              </>
-                            )}
-                          </button>
-                        )}
 
                         {cliente && (
                           <button
@@ -3399,7 +3166,7 @@ const AdminPanel = ({ onLogout }: { onLogout: () => void }) => {
           )}
 
           {tab === "caixa" && <CaixaTab agendamentos={agendamentos} getClientName={getClientName} onUpdate={loadData} />}
-          {tab === "pagamentos" && <PagamentosTab agendamentos={agendamentos} getClientName={getClientName} onUpdate={loadData} onEdit={openEditAgendamento} clientes={clientes} />}
+          {tab === "pagamentos" && <PagamentosTab agendamentos={agendamentos} getClientName={getClientName} onUpdate={loadData} onEdit={openEditAgendamento} />}
           {tab === "gastos" && <GastosTab />}
           {tab === "pedidos" && (
             <PedidosTab
