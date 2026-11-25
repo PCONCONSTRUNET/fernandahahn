@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>Fernanda Hahn Agenda</title>
+    <meta name="description" content="Agenda Fernanda Hahn">
+    <meta name="author" content="Fernanda Hahn" />
+    <meta http-equiv="Content-Language" content="pt-BR" />
+    <meta name="language" content="pt-BR" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" id="apple-app-title" content="Fernanda Hahn" />
+    <meta name="application-name" id="application-name" content="Fernanda Hahn" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <link rel="manifest" id="app-manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#d4a0a0" />
+    <link rel="apple-touch-icon" id="apple-touch-icon" href="/icon-512.png" />
+    <link rel="icon" type="image/png" href="/icon-512.png">
+    <script>
+      (function () {
+        try {
+          var path = window.location.pathname || "";
+          var isAdmin = path.indexOf("/admin") === 0;
+          var manifest = document.getElementById("app-manifest");
+          var appleTitle = document.getElementById("apple-app-title");
+          var appName = document.getElementById("application-name");
+          var appleIcon = document.getElementById("apple-touch-icon");
+          var appIcon = document.getElementById("app-icon");
+
+          document.documentElement.lang = "pt-BR";
+          if (isAdmin) {
+            if (manifest) manifest.setAttribute("href", "/manifest-admin.json?v=2");
+            if (appleTitle) appleTitle.setAttribute("content", "Fernanda Hahn Admin");
+            if (appName) appName.setAttribute("content", "Fernanda Hahn Admin");
+            if (appleIcon) appleIcon.setAttribute("href", "/icon-admin-512.png?v=2");
+            if (appIcon) appIcon.setAttribute("href", "/icon-admin-512.png?v=2");
+            document.title = "Fernanda Hahn Admin";
+          } else {
+            document.title = "Fernanda Hahn";
+          }
+        } catch (e) {}
+      })();
+    </script>
+    
+    
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="/icon-512.png">
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="/icon-512.png">
+    
+  
+  
+  
+  <meta property="og:title" content="Fernanda Hahn Agenda">
+  <meta name="twitter:title" content="Fernanda Hahn Agenda">
+  <meta property="og:description" content="Agenda Fernanda Hahn">
+  <meta name="twitter:description" content="Agenda Fernanda Hahn">
+</head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

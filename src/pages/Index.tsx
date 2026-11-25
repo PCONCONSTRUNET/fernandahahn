@@ -1,0 +1,124 @@
+import { useState, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import HeroSection from "@/components/HeroSection";
+import AuthScreen from "@/components/AuthScreen";
+import GuidedFlow from "@/components/GuidedFlow";
+import ServiceList from "@/components/ServiceList";
+import BookingFlow from "@/components/BookingFlow";
+import SuccessScreen from "@/components/SuccessScreen";
+import ProfileScreen from "@/components/ProfileScreen";
+
+type Screen = "home" | "auth" | "guided" | "services" | "booking" | "success" | "profile";
+
+const Index = () => {
+  const [screen, setScreen] = useState<Screen>("home");
+  const [selectedService, setSelectedService] = useState("");
+  const [selectedVariation, setSelectedVariation] = useState<string | undefined>();
+  const [serviceFilter, setServiceFilter] = useState("");
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAuthenticated(!!session);
+    });
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setIsAuthenticated(!!session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleScheduleClick = () => {
+    if (isAuthenticated) {
+      setScreen("guided");
+    } else {
+      setScreen("auth");
+    }
+  };
+
+  const handleLoginClick = () => {
+    if (isAuthenticated) {
+      setScreen("guided");
+    } else {
+      setScreen("auth");
+    }
+  };
+
+  const handleAuthSuccess = () => {
+    setScreen("guided");
+  };
+
+  const handleSelectService = (serviceId: string) => {
+    setServiceFilter(serviceId);
+    setScreen("services");
+  };
+
+  const handleSchedule = (service: string, variation?: string) => {
+    setSelectedService(service);
+    setSelectedVariation(variation);
+    setScreen("booking");
+  };
+
+  const handleConfirm = async (bookingData?: { date: string; time: string; price: number; paidAmount: number }) => {
+    // Agendamento is now created as "pendente" inside BookingFlow before payment
+    // When payment is confirmed via webhook, status changes to "confirmado"
+    // If no gateway is active (local PIX), BookingFlow creates it as "confirmado" directly
+    setScreen("success");
+  };
+
+  return (
+    <div className="max-w-md mx-auto min-h-screen">
+      {(screen === "home" || screen === "auth" || screen === "success" || screen === "profile") && (
+        <HeroSection
+          onSchedule={handleScheduleClick}
+          onLogin={handleLoginClick}
+          onProfile={() => setScreen("profile")}
+          isAuthenticated={isAuthenticated}
+        />
+      )}
+      {screen === "auth" && (
+        <AuthScreen
+          onSuccess={handleAuthSuccess}
+          onBack={() => setScreen("home")}
+        />
+      )}
+      {screen === "guided" && (
+        <GuidedFlow
+          onSelectService={handleSelectService}
+          onBack={() => setScreen("home")}
+          onProfile={() => setScreen("profile")}
+        />
+      )}
+      {screen === "services" && (
+        <ServiceList
+          serviceFilter={serviceFilter}
+          onSchedule={handleSchedule}
+          onBack={() => setScreen("guided")}
+        />
+      )}
+      {screen === "booking" && (
+        <BookingFlow
+          service={selectedService}
+          variation={selectedVariation}
+          onBack={() => setScreen("services")}
+          onConfirm={handleConfirm}
+        />
+      )}
+      {screen === "success" && (
+        <SuccessScreen
+          onHome={() => setScreen("home")}
+          onProfile={() => setScreen("profile")}
+        />
+      )}
+      {screen === "profile" && (
+        <ProfileScreen
+          onBack={() => setScreen("home")}
+          onLogout={() => setScreen("home")}
+        />
+      )}
+    </div>
+  );
+};
+
+export default Index;

@@ -1,0 +1,350 @@
+import { useState, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { ArrowLeft, Eye, EyeOff } from "lucide-react";
+import professionalImg from "@/assets/professional.png";
+import ForgotPasswordModal from "./ForgotPasswordModal";
+
+interface AuthScreenProps {
+  onSuccess: () => void;
+  onBack: () => void;
+  initialMode?: "login" | "signup";
+}
+
+type AuthMode = "login" | "signup";
+
+const AuthScreen = ({ onSuccess, onBack, initialMode = "signup" }: AuthScreenProps) => {
+  const [mode, setMode] = useState<AuthMode>(initialMode);
+  useEffect(() => {
+    setMode(initialMode);
+  }, [initialMode]);
+  const [nome, setNome] = useState("");
+  const [emailInput, setEmailInput] = useState("");
+  const [whatsapp, setWhatsapp] = useState("");
+  const [identificadorLogin, setIdentificadorLogin] = useState("");
+  const [senha, setSenha] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [infoMessage, setInfoMessage] = useState("");
+  const [showForgot, setShowForgot] = useState(false);
+
+  const formatWhatsapp = (value: string) => {
+    const digits = value.replace(/\D/g, "").slice(0, 11);
+    if (digits.length <= 2) return digits;
+    if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+  };
+
+  const getEmailFromWhatsapp = (wpp: string) => {
+    const digits = wpp.replace(/\D/g, "");
+    return `${digits}@fernandahahn.app`;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setInfoMessage("");
+    setLoading(true);
+
+    if (senha.length < 6) {
+      setError("A senha deve ter pelo menos 6 caracteres");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      if (mode === "signup") {
+        if (!nome.trim() || nome.trim().length < 2) {
+          setError("Informe seu nome completo");
+          setLoading(false);
+          return;
+        }
+
+        const cleanEmail = emailInput.trim().toLowerCase();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+          setError("Informe um e-mail válido");
+          setLoading(false);
+          return;
+        }
+
+        const digits = whatsapp.replace(/\D/g, "");
+        if (digits.length < 10) {
+          setError("Informe um telefone/WhatsApp válido com DDD");
+          setLoading(false);
+          return;
+        }
+
+        const { data, error: signUpError } = await supabase.auth.signUp({
+          email: cleanEmail,
+          password: senha,
+          options: {
+            data: {
+              nome: nome.trim(),
+              whatsapp: digits,
+              email: cleanEmail,
+            },
+          },
+        });
+
+        if (signUpError) {
+          if (signUpError.message.toLowerCase().includes("already registered")) {
+            setError("Este e-mail já está cadastrado. Faça login.");
+            setIdentificadorLogin(cleanEmail);
+            setMode("login");
+          } else {
+            setError(signUpError.message);
+          }
+          setLoading(false);
+          return;
+        }
+
+        if (!data?.session) {
+          setInfoMessage("Conta criada! Verifique seu e-mail para confirmar e entrar.");
+          setIdentificadorLogin(cleanEmail);
+          setMode("login");
+          setLoading(false);
+          return;
+        }
+      } else {
+        const raw = identificadorLogin.trim();
+        let loginEmail = "";
+        if (raw.includes("@")) {
+          loginEmail = raw.toLowerCase();
+          if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(loginEmail)) {
+            setError("Informe um e-mail válido");
+            setLoading(false);
+            return;
+          }
+        } else {
+          const digits = raw.replace(/\D/g, "");
+          if (digits.length < 10) {
+            setError("Informe seu e-mail ou WhatsApp cadastrado");
+            setLoading(false);
+            return;
+          }
+          loginEmail = getEmailFromWhatsapp(digits);
+        }
+
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email: loginEmail,
+          password: senha,
+        });
+
+        if (signInError) {
+          if (signInError.message.includes("Invalid login")) {
+            setError("E-mail/WhatsApp ou senha incorretos");
+          } else {
+            setError(signInError.message);
+          }
+          setLoading(false);
+          return;
+        }
+      }
+
+      onSuccess();
+    } catch {
+      setError("Ocorreu um erro. Tente novamente.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4 animate-fade-in overflow-hidden">
+      {/* Full background matching HeroSection */}
+      <div className="absolute inset-0 animate-bg-drift" style={{
+        background: 'linear-gradient(135deg, hsl(0 0% 8%) 0%, hsl(30 15% 12%) 25%, hsl(20 10% 10%) 50%, hsl(0 0% 9%) 75%, hsl(30 20% 11%) 100%)',
+        backgroundSize: '400% 400%',
+      }} />
+      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full bg-gold/[0.025] blur-[150px] animate-hero-glow" />
+      <div className="absolute bottom-1/4 right-1/4 w-[350px] h-[350px] rounded-full bg-nude/[0.03] blur-[130px] animate-hero-glow-alt" />
+      {/* Dark overlay */}
+      <div className="absolute inset-0 bg-black/40" onClick={onBack} />
+
+      {/* iOS-style glass modal — compact with reflective sheen */}
+      <div className="relative w-full max-w-[355px] lg:max-w-sm max-h-[92dvh] overflow-y-auto custom-scrollbar rounded-3xl border border-primary-foreground/[0.1] bg-charcoal/75 backdrop-blur-2xl shadow-[0_25px_60px_-12px_rgba(0,0,0,0.6)] px-6 py-5 space-y-3.5 animate-scale-in">
+        {/* Reflective highlights */}
+        <div className="pointer-events-none absolute inset-0 rounded-3xl bg-gradient-to-br from-primary-foreground/[0.08] via-transparent to-transparent" />
+        <div className="pointer-events-none absolute -top-px left-6 right-6 h-px bg-gradient-to-r from-transparent via-primary-foreground/40 to-transparent" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-1/2 rounded-t-3xl bg-gradient-to-b from-primary-foreground/[0.06] to-transparent" />
+        <div className="pointer-events-none absolute -inset-x-10 -top-20 h-40 bg-gradient-to-b from-gold/[0.08] to-transparent blur-2xl" />
+
+        {/* Close */}
+        <button
+          onClick={onBack}
+          className="ios-press absolute top-3.5 right-3.5 w-8 h-8 rounded-full bg-primary-foreground/[0.08] flex items-center justify-center text-primary-foreground/75 hover:text-primary-foreground/100 hover:bg-primary-foreground/[0.12] transition-all z-10"
+        >
+          <ArrowLeft className="w-4 h-4" />
+        </button>
+
+        {/* Photo */}
+        <div className="relative flex justify-center">
+          <div className="relative w-20 h-20 rounded-full overflow-hidden border-2 border-gold/20 bg-charcoal p-1.5 shadow-[0_8px_30px_-8px_hsl(22_58%_63%/0.25)]">
+            <img src={professionalImg} alt="Fernanda Hahn" className="w-full h-full object-contain" />
+            <div className="pointer-events-none absolute inset-0 rounded-full bg-gradient-to-br from-primary-foreground/20 via-transparent to-transparent" />
+          </div>
+        </div>
+
+        {/* Title */}
+        <div className="relative text-center space-y-0.5">
+          <h1 className="font-heading text-[22px] font-semibold text-primary-foreground tracking-wide">
+            {mode === "signup" ? "Criar Conta" : "Entrar"}
+          </h1>
+          <p className="font-body text-[12px] text-primary-foreground/75 font-light">
+            {mode === "signup"
+              ? "Cadastre-se com e-mail, telefone e senha"
+              : "Acesse sua conta para agendar"}
+          </p>
+        </div>
+
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="relative space-y-3">
+          {mode === "signup" ? (
+            <>
+              <div className="space-y-1.5">
+                <label className="font-body text-[11px] text-primary-foreground/75 uppercase tracking-widest font-medium">
+                  Nome
+                </label>
+                <input
+                  type="text"
+                  value={nome}
+                  onChange={(e) => setNome(e.target.value)}
+                  placeholder="Seu nome completo"
+                  className="w-full px-4 py-2.5 rounded-xl bg-primary-foreground/[0.05] border border-primary-foreground/[0.08] text-primary-foreground font-body text-[14px] placeholder:text-primary-foreground/45 focus:outline-none focus:ring-2 focus:ring-gold/25 focus:border-gold/40 transition-all duration-200"
+                  maxLength={100}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="font-body text-[11px] text-primary-foreground/75 uppercase tracking-widest font-medium">
+                  E-mail
+                </label>
+                <input
+                  type="email"
+                  autoComplete="email"
+                  value={emailInput}
+                  onChange={(e) => setEmailInput(e.target.value)}
+                  placeholder="seu@email.com"
+                  className="w-full px-4 py-2.5 rounded-xl bg-primary-foreground/[0.05] border border-primary-foreground/[0.08] text-primary-foreground font-body text-[14px] placeholder:text-primary-foreground/45 focus:outline-none focus:ring-2 focus:ring-gold/25 focus:border-gold/40 transition-all duration-200"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="font-body text-[11px] text-primary-foreground/75 uppercase tracking-widest font-medium">
+                  Telefone / WhatsApp
+                </label>
+                <input
+                  type="tel"
+                  autoComplete="tel"
+                  value={whatsapp}
+                  onChange={(e) => setWhatsapp(formatWhatsapp(e.target.value))}
+                  placeholder="(00) 00000-0000"
+                  className="w-full px-4 py-2.5 rounded-xl bg-primary-foreground/[0.05] border border-primary-foreground/[0.08] text-primary-foreground font-body text-[14px] placeholder:text-primary-foreground/45 focus:outline-none focus:ring-2 focus:ring-gold/25 focus:border-gold/40 transition-all duration-200"
+                />
+              </div>
+            </>
+          ) : (
+            <div className="space-y-1.5">
+              <label className="font-body text-[11px] text-primary-foreground/75 uppercase tracking-widest font-medium">
+                E-mail ou WhatsApp
+              </label>
+              <input
+                type="text"
+                autoComplete="username"
+                value={identificadorLogin}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setIdentificadorLogin(val.includes("@") || /[a-zA-Z]/.test(val) ? val : formatWhatsapp(val));
+                }}
+                placeholder="seu@email.com ou (00) 00000-0000"
+                className="w-full px-4 py-3 rounded-xl bg-primary-foreground/[0.05] border border-primary-foreground/[0.08] text-primary-foreground font-body text-[14px] placeholder:text-primary-foreground/45 focus:outline-none focus:ring-2 focus:ring-gold/25 focus:border-gold/40 transition-all duration-200"
+              />
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <label className="font-body text-[11px] text-primary-foreground/75 uppercase tracking-widest font-medium">
+              Senha
+            </label>
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                value={senha}
+                onChange={(e) => setSenha(e.target.value)}
+                placeholder="Mínimo 6 caracteres"
+                className="w-full px-4 py-2.5 rounded-xl bg-primary-foreground/[0.05] border border-primary-foreground/[0.08] text-primary-foreground font-body text-[14px] placeholder:text-primary-foreground/45 focus:outline-none focus:ring-2 focus:ring-gold/25 focus:border-gold/40 transition-all duration-200 pr-12"
+                maxLength={72}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="ios-press absolute right-3 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg flex items-center justify-center text-primary-foreground/85 hover:text-primary-foreground hover:bg-primary-foreground/[0.06] transition-all"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          {infoMessage && (
+            <div className="px-3 py-2 rounded-xl bg-gold/10 border border-gold/30">
+              <p className="font-body text-[12px] text-gold text-center">{infoMessage}</p>
+            </div>
+          )}
+
+          {error && (
+            <div className="px-3 py-2 rounded-xl bg-rose/10 border border-rose/20">
+              <p className="font-body text-[12px] text-rose text-center">{error}</p>
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="ios-press w-full py-3.5 rounded-full bg-rose text-primary-foreground font-body font-semibold text-[15px] tracking-wide shadow-[0_4px_20px_-4px_hsl(340_30%_50%/0.4)] disabled:opacity-40 disabled:cursor-not-allowed mt-2 transition-all duration-200"
+          >
+            {loading
+              ? "Aguarde..."
+              : mode === "signup"
+              ? "Criar Conta"
+              : "Entrar"}
+          </button>
+
+          {mode === "login" && (
+            <button
+              type="button"
+              onClick={() => setShowForgot(true)}
+              className="block mx-auto pt-1 font-body text-[12px] text-primary-foreground/75 hover:text-gold transition-colors"
+            >
+              Esqueci minha senha
+            </button>
+          )}
+        </form>
+
+        {/* Toggle mode */}
+        <div className="relative text-center pb-1">
+          <button
+            onClick={() => {
+              setMode(mode === "signup" ? "login" : "signup");
+              setError("");
+              setInfoMessage("");
+            }}
+            className="font-body text-[13px] text-primary-foreground/95 hover:text-gold transition-colors duration-200"
+          >
+            {mode === "signup"
+              ? "Já tenho conta · Entrar"
+              : "Não tenho conta · Cadastrar"}
+          </button>
+        </div>
+      </div>
+
+      <ForgotPasswordModal
+        open={showForgot}
+        onClose={() => setShowForgot(false)}
+        initialWhatsapp={mode === "signup" ? whatsapp : (identificadorLogin.includes("@") ? "" : identificadorLogin)}
+      />
+    </div>
+  );
+};
+
+export default AuthScreen;

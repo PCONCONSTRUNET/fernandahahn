@@ -1,0 +1,15 @@
+-- Agendamento do cron de lembretes: configure após criar o novo projeto Supabase,
+-- substituindo <SEU_PROJECT_ID> e <SUA_ANON_KEY> pelas credenciais do novo projeto.
+-- Exemplo:
+-- SELECT cron.schedule(
+--   'send-lembretes-every-10-min',
+--   '*/10 * * * *',
+--   $$
+--   SELECT net.http_post(
+--     url := 'https://<SEU_PROJECT_ID>.supabase.co/functions/v1/send-lembretes',
+--     headers := '{"Content-Type": "application/json", "apikey": "<SUA_ANON_KEY>"}'::jsonb,
+--     body := concat('{"trigger": "cron", "time": "', now(), '"}')::jsonb
+--   );
+--   $$
+-- );
+SELECT 1;

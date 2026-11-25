@@ -1,0 +1,501 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Cormorant+Garamond:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 30 15% 95%;
+    --foreground: 0 0% 11%;
+
+    --card: 30 20% 97%;
+    --card-foreground: 0 0% 11%;
+
+    --popover: 30 20% 97%;
+    --popover-foreground: 0 0% 11%;
+
+    --primary: 340 30% 50%;
+    --primary-foreground: 30 15% 95%;
+
+    --secondary: 30 15% 92%;
+    --secondary-foreground: 0 0% 11%;
+
+    --muted: 30 10% 90%;
+    --muted-foreground: 0 0% 40%;
+
+    --accent: 22 58% 63%;
+    --accent-foreground: 0 0% 11%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 30 15% 88%;
+    --input: 30 15% 88%;
+    --ring: 340 30% 50%;
+
+    --radius: 0.875rem;
+
+    --gold: 22 58% 63%;
+    --gold-foreground: 0 0% 11%;
+    --nude: 30 30% 94%;
+    --charcoal: 0 0% 11%;
+    --rose: 340 30% 50%;
+    --success: 142 71% 42%;
+    --success-foreground: 0 0% 98%;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 0 0% 11%;
+    --foreground: 30 15% 95%;
+    --card: 0 0% 14%;
+    --card-foreground: 30 15% 95%;
+    --popover: 0 0% 14%;
+    --popover-foreground: 30 15% 95%;
+    --primary: 340 30% 50%;
+    --primary-foreground: 30 15% 95%;
+    --secondary: 0 0% 18%;
+    --secondary-foreground: 30 15% 95%;
+    --muted: 0 0% 18%;
+    --muted-foreground: 30 10% 65%;
+    --accent: 22 58% 63%;
+    --accent-foreground: 30 15% 95%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 20%;
+    --input: 0 0% 20%;
+    --ring: 340 30% 50%;
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 98%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: -apple-system, 'SF Pro Display', 'SF Pro Text', 'Inter', 'Helvetica Neue', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  html.admin-mobile-page,
+  body.admin-mobile-page {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+    overscroll-behavior-x: none;
+  }
+
+  @media (max-width: 640px) {
+    .admin-mobile-page input,
+    .admin-mobile-page select,
+    .admin-mobile-page textarea {
+      font-size: 16px !important;
+    }
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: -apple-system, 'SF Pro Display', 'SF Pro Text', 'Inter', 'Helvetica Neue', sans-serif;
+    letter-spacing: -0.02em;
+    font-weight: 600;
+  }
+}
+
+@layer utilities {
+  .font-heading {
+    font-family: -apple-system, 'SF Pro Display', 'SF Pro Text', 'Inter', 'Helvetica Neue', sans-serif;
+    letter-spacing: -0.02em;
+  }
+  .font-body {
+    font-family: -apple-system, 'SF Pro Text', 'Inter', 'Helvetica Neue', sans-serif;
+  }
+  .admin-mobile-shell {
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: hidden;
+    touch-action: manipulation;
+  }
+  .admin-mobile-shell * {
+    min-width: 0;
+  }
+
+  /* iOS-style scrollbar */
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(22 58% 63% / 0.35) transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+    margin: 6px 0;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: hsl(22 58% 63% / 0.32);
+    border-radius: 9999px;
+    border: 1px solid transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: hsl(22 58% 63% / 0.56);
+  }
+
+  [role="dialog"].overflow-y-auto,
+  [role="dialog"] .overflow-y-auto {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(22 58% 63% / 0.35) transparent;
+  }
+  [role="dialog"].overflow-y-auto::-webkit-scrollbar,
+  [role="dialog"] .overflow-y-auto::-webkit-scrollbar {
+    width: 6px;
+  }
+  [role="dialog"].overflow-y-auto::-webkit-scrollbar-track,
+  [role="dialog"] .overflow-y-auto::-webkit-scrollbar-track {
+    background: transparent;
+    margin: 10px 0;
+  }
+  [role="dialog"].overflow-y-auto::-webkit-scrollbar-thumb,
+  [role="dialog"] .overflow-y-auto::-webkit-scrollbar-thumb {
+    background: hsl(22 58% 63% / 0.32);
+    border-radius: 9999px;
+  }
+  [role="dialog"].overflow-y-auto::-webkit-scrollbar-thumb:hover,
+  [role="dialog"] .overflow-y-auto::-webkit-scrollbar-thumb:hover {
+    background: hsl(22 58% 63% / 0.56);
+  }
+
+  /* iOS haptic-feel button press */
+  .ios-press {
+    @apply transition-all duration-150 ease-out;
+  }
+  .ios-press:active {
+    transform: scale(0.97);
+    filter: brightness(0.92);
+  }
+}
+
+/* Dark themed native select options */
+select option {
+  background-color: hsl(240 6% 10%);
+  color: hsl(30 15% 95%);
+}
+
+/* ============================================================
+   Animated tab icons — each tab has its own personality.
+   Triggered on group hover and when the tab is active.
+   ============================================================ */
+@layer utilities {
+  /* Base: icon transitions smoothly */
+  .tab-icon {
+    transition: transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1), filter 300ms ease;
+    transform-origin: center;
+  }
+
+  /* Dashboard — bars rise/breathe */
+  @keyframes icon-pulse-bars {
+    0%, 100% { transform: scaleY(1); }
+    50% { transform: scaleY(1.12); }
+  }
+  .tab-icon-dashboard {
+    animation: icon-pulse-bars 2.2s ease-in-out infinite;
+  }
+  .group:hover .tab-icon-dashboard,
+  .tab-active .tab-icon-dashboard {
+    animation-duration: 1.4s;
+  }
+
+  /* Calendar — gentle tilt */
+  @keyframes icon-tilt {
+    0%, 100% { transform: rotate(0deg); }
+    25% { transform: rotate(-8deg); }
+    75% { transform: rotate(8deg); }
+  }
+  .tab-icon-calendar {
+    animation: icon-tilt 2.4s ease-in-out infinite;
+  }
+  .group:hover .tab-icon-calendar,
+  .tab-active .tab-icon-calendar {
+    animation-duration: 1.2s;
+  }
+
+  /* Pedidos / clipboard — checkmark bounce */
+  @keyframes icon-bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
+  }
+  .tab-icon-bounce {
+    animation: icon-bounce 2s ease-in-out infinite;
+  }
+  .group:hover .tab-icon-bounce,
+  .tab-active .tab-icon-bounce {
+    animation-duration: 1s;
+  }
+
+  /* Financeiro / Caixa / Gateway — money spin */
+  @keyframes icon-spin-soft {
+    0% { transform: rotateY(0deg); }
+    100% { transform: rotateY(360deg); }
+  }
+  .tab-icon-spin {
+    animation: icon-spin-soft 4s ease-in-out infinite;
+  }
+  .group:hover .tab-icon-spin,
+  .tab-active .tab-icon-spin {
+    animation-duration: 2s;
+  }
+
+  /* Pagamentos — card swipe */
+  @keyframes icon-swipe {
+    0%, 100% { transform: translateX(0); }
+    50% { transform: translateX(2px); }
+  }
+  .tab-icon-swipe {
+    animation: icon-swipe 1.8s ease-in-out infinite;
+  }
+  .group:hover .tab-icon-swipe,
+  .tab-active .tab-icon-swipe {
+    animation-duration: 0.9s;
+  }
+
+  /* Despesas — receipt shake */
+  @keyframes icon-shake {
+    0%, 100% { transform: rotate(0deg); }
+    25% { transform: rotate(-4deg); }
+    75% { transform: rotate(4deg); }
+  }
+  .tab-icon-shake {
+    animation: icon-shake 1.8s ease-in-out infinite;
+  }
+  .group:hover .tab-icon-shake,
+  .tab-active .tab-icon-shake {
+    animation-duration: 0.8s;
+  }
+
+  /* Clientes — gentle wave */
+  @keyframes icon-wave {
+    0%, 100% { transform: translateY(0) scale(1); }
+    50% { transform: translateY(-2px) scale(1.06); }
+  }
+  .tab-icon-wave {
+    animation: icon-wave 2.4s ease-in-out infinite;
+  }
+  .group:hover .tab-icon-wave,
+  .tab-active .tab-icon-wave {
+    animation-duration: 1.3s;
+  }
+
+  /* Produtos — bag bob */
+  @keyframes icon-bob {
+    0%, 100% { transform: translateY(0) rotate(0deg); }
+    50% { transform: translateY(-2px) rotate(-3deg); }
+  }
+  .tab-icon-bob {
+    animation: icon-bob 2.2s ease-in-out infinite;
+  }
+  .group:hover .tab-icon-bob,
+  .tab-active .tab-icon-bob {
+    animation-duration: 1.2s;
+  }
+
+  /* Horários — clock tick */
+  @keyframes icon-tick {
+    0%, 90%, 100% { transform: rotate(0deg); }
+    20% { transform: rotate(30deg); }
+    40% { transform: rotate(60deg); }
+    60% { transform: rotate(90deg); }
+    80% { transform: rotate(120deg); }
+  }
+  .tab-icon-tick {
+    animation: icon-tick 4s steps(8, end) infinite;
+  }
+  .group:hover .tab-icon-tick,
+  .tab-active .tab-icon-tick {
+    animation-duration: 2.4s;
+  }
+
+  /* Serviços — settings spin */
+  @keyframes icon-cog {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  .tab-icon-cog {
+    animation: icon-cog 8s linear infinite;
+  }
+  .group:hover .tab-icon-cog,
+  .tab-active .tab-icon-cog {
+    animation-duration: 3s;
+  }
+
+  /* Active state slight glow */
+  .tab-active .tab-icon {
+    filter: drop-shadow(0 0 6px hsl(var(--gold) / 0.45));
+  }
+
+  /* Respect reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    .tab-icon,
+    .tab-icon[class*="tab-icon-"] {
+      animation: none !important;
+    }
+  }
+}
+/* Botão animado "Entrar no painel" */
+.btn-entrar-admin {
+  display: inline-block;
+  width: 100%;
+  padding: 14px 24px;
+  font-size: 15px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #fff;
+  background-color: #ff4081;
+  border: none;
+  border-radius: 50px;
+  transition: background-color 0.3s ease, transform 0.2s ease, box-shadow 0.3s ease;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  z-index: 1;
+}
+.btn-entrar-admin::before {
+  content: "";
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background-color: rgba(255, 64, 129, 0.6);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  transition: all 0.4s ease;
+  z-index: -1;
+}
+.btn-entrar-admin::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image: linear-gradient(45deg, rgba(255, 255, 255, 0.2) 25%, transparent 25%, transparent 50%, rgba(255, 255, 255, 0.2) 50%, rgba(255, 255, 255, 0.2) 75%, transparent 75%, transparent);
+  background-size: 30px 30px;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+.btn-entrar-admin:hover {
+  background-color: #e91e63;
+  transform: scale(1.04) rotate(1deg);
+  box-shadow: 0 8px 12px rgba(0, 0, 0, 0.3);
+}
+.btn-entrar-admin:hover::before {
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  height: 100%;
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+.btn-entrar-admin:hover::after {
+  opacity: 1;
+}
+.btn-entrar-admin:active {
+  background-color: #e91e63;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+  transform: translateY(2px);
+}
+
+/* Botão hero com overlay + shine */
+.btn-hero-shine {
+  position: relative;
+  overflow: hidden;
+  transition: background-color 0.3s ease, transform 0.2s ease, box-shadow 0.3s ease;
+}
+.btn-hero-shine > .btn-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  z-index: 0;
+}
+.btn-hero-shine > .btn-shine {
+  position: absolute;
+  top: -80px;
+  left: -80px;
+  width: 160px;
+  height: 160px;
+  background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.8) 0%, transparent 80%);
+  transform: rotate(45deg);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  z-index: 0;
+}
+.btn-hero-shine > * { position: relative; z-index: 1; }
+.btn-hero-shine > .btn-overlay,
+.btn-hero-shine > .btn-shine { z-index: 0; }
+.btn-hero-shine:hover > .btn-overlay { opacity: 0.45; }
+.btn-hero-shine:hover > .btn-shine { opacity: 1; }
+.btn-hero-shine:active { transform: translateY(1px); }
+
+/* ── Recharts: remover fundo cinza do gráfico ────────────────── */
+.recharts-wrapper {
+  background: transparent !important;
+}
+.recharts-surface {
+  background: transparent !important;
+}
+.recharts-wrapper svg {
+  background: transparent !important;
+}
+/* Remove o retângulo de fundo que o Recharts injeta no SVG */
+.recharts-surface > rect:first-child,
+.recharts-plot-background,
+svg.recharts-surface > g > rect[fill] {
+  fill: transparent !important;
+  background: transparent !important;
+}
+/* O cursor cinza ao passar o mouse nas barras */
+.recharts-rectangle.recharts-tooltip-cursor {
+  fill: rgba(255,255,255,0.04) !important;
+}
+

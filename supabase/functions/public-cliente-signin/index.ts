@@ -1,0 +1,190 @@
+// Public endpoint: identifica cliente pelo WhatsApp, cria/atualiza conta e
+// devolve uma sessão (access_token/refresh_token) para o front continuar
+// usando o fluxo normal de agendamento autenticado, sem precisar pedir senha.
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import {
+  normalizeWhatsapp,
+  whatsappToEmail,
+  whatsappVariations,
+} from "../_shared/whatsapp.ts";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+const DEFAULT_PASSWORD = "123123";
+
+const json = (data: unknown, status = 200) =>
+  new Response(JSON.stringify(data), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  try {
+    const { nome, whatsapp } = await req.json();
+
+    if (!nome || !whatsapp) {
+      return json({ error: "Informe nome e WhatsApp" }, 400);
+    }
+
+    const wa = normalizeWhatsapp(whatsapp);
+    if (wa.length < 10 || wa.length > 15) {
+      return json({ error: "WhatsApp inválido" }, 400);
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const admin = createClient(supabaseUrl, serviceKey);
+    const anon = createClient(supabaseUrl, anonKey);
+
+    const email = whatsappToEmail(wa);
+
+    // 1) Tenta achar perfil pelo WhatsApp (com variações legadas)
+    const { data: existingProfiles } = await admin
+      .from("profiles")
+      .select("id, nome, whatsapp")
+      .in("whatsapp", whatsappVariations(wa))
+      .limit(1);
+    const existingProfile = existingProfiles?.[0];
+
+    let userId: string | null = existingProfile?.id ?? null;
+    let isNew = false;
+
+    // 2) Se não existe perfil, cria conta
+    if (!userId) {
+      const { data: created, error: createErr } = await admin.auth.admin.createUser({
+        email,
+        password: DEFAULT_PASSWORD,
+        email_confirm: true,
+        user_metadata: { nome, whatsapp: wa, source: "public_booking" },
+      });
+
+      if (createErr) {
+        // Possível: email já existe (legado). Procura pelo email.
+        const { data: list } = await admin.auth.admin.listUsers();
+        const found = list?.users?.find((u) => u.email === email);
+        if (!found) {
+          console.error("createUser error", createErr);
+          return json({ error: "Não foi possível criar a conta" }, 500);
+        }
+        userId = found.id;
+      } else {
+        userId = created.user?.id ?? null;
+        isNew = true;
+      }
+
+      if (userId) {
+        await admin
+          .from("profiles")
+          .upsert({ id: userId, nome, whatsapp: wa }, { onConflict: "id" });
+      }
+    } else {
+      // Perfil existe — mantém o nome cadastrado, e só atualiza whatsapp se mudou (evita write desnecessário no Nano)
+      if (existingProfile.whatsapp !== wa) {
+        await admin
+          .from("profiles")
+          .update({ whatsapp: wa })
+          .eq("id", userId);
+      }
+    }
+
+    if (!userId) {
+      return json({ error: "Falha ao identificar cliente" }, 500);
+    }
+
+    // 3) Tenta login direto quando conta já existe para evitar getUserById + updateUserById + bcrypt duplo
+    let signin = null;
+    let preferredEmail = email;
+
+    if (!isNew) {
+      const directSignin = await anon.auth.signInWithPassword({
+        email,
+        password: DEFAULT_PASSWORD,
+      });
+      if (!directSignin.error && directSignin.data.session) {
+        signin = directSignin;
+      }
+    }
+
+    if (!signin?.data?.session) {
+      // Fallback / conta nova: sincroniza conta auth legada e faz signin para devolver tokens
+      const { data: authUserData, error: authUserErr } = await admin.auth.admin.getUserById(userId);
+      if (authUserErr) {
+        console.error("getUserById error", authUserErr);
+      }
+
+      const existingAuthEmail = authUserData?.user?.email?.trim().toLowerCase() || null;
+
+      const syncPayload: {
+        email?: string;
+        password: string;
+        email_confirm: true;
+        user_metadata: { nome: string; whatsapp: string; source: string };
+      } = {
+        password: DEFAULT_PASSWORD,
+        email_confirm: true,
+        user_metadata: { nome: existingProfile?.nome || nome, whatsapp: wa, source: "public_booking" },
+      };
+
+      if (!existingAuthEmail || existingAuthEmail !== email) {
+        syncPayload.email = email;
+      } else {
+        preferredEmail = existingAuthEmail;
+      }
+
+      const { error: syncErr } = await admin.auth.admin.updateUserById(userId, syncPayload);
+      if (syncErr) {
+        console.error("admin sync user error", syncErr);
+        preferredEmail = existingAuthEmail || email;
+      } else if (syncPayload.email) {
+        preferredEmail = email;
+      }
+
+      const candidateEmails = Array.from(new Set([preferredEmail, existingAuthEmail, email].filter(Boolean)));
+
+      let lastSigninError = null;
+
+      for (const candidateEmail of candidateEmails) {
+        await new Promise((r) => setTimeout(r, 250));
+        const result = await anon.auth.signInWithPassword({
+          email: candidateEmail as string,
+          password: DEFAULT_PASSWORD,
+        });
+        if (!result.error && result.data.session) {
+          signin = result;
+          break;
+        }
+        lastSigninError = result.error;
+      }
+
+      if (!signin?.data?.session) {
+        console.error("signin error", lastSigninError, "userId:", userId, "canonicalEmail:", email, "existingAuthEmail:", existingAuthEmail);
+        return json({ error: "Não foi possível iniciar a sessão. Tente novamente em instantes." }, 500);
+      }
+    }
+
+    return json({
+      success: true,
+      is_new: isNew,
+      cliente: {
+        user_id: userId,
+        nome: existingProfile?.nome || nome,
+        whatsapp: wa,
+        email: preferredEmail,
+      },
+      session: {
+        access_token: signin.data.session.access_token,
+        refresh_token: signin.data.session.refresh_token,
+      },
+    });
+  } catch (err) {
+    console.error("public-cliente-signin error", err);
+    return json({ error: err instanceof Error ? err.message : "Erro interno" }, 500);
+  }
+});

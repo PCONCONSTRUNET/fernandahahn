@@ -1,0 +1,122 @@
+import { User } from "lucide-react";
+import professionalImg from "@/assets/professional.png";
+import ReviewsSection from "@/components/ReviewsSection";
+
+interface HeroSectionProps {
+  onSchedule: () => void;
+  onLogin: () => void;
+  onProfile?: () => void;
+  isAuthenticated?: boolean;
+}
+
+const HeroSection = ({ onSchedule, onLogin, onProfile, isAuthenticated }: HeroSectionProps) => {
+  return (
+    <section className="relative min-h-screen flex flex-col bg-charcoal overflow-hidden">
+      {/* Animated premium gradient background */}
+      <div className="absolute inset-0 animate-bg-drift" style={{
+        background: 'linear-gradient(135deg, hsl(0 0% 8%) 0%, hsl(30 15% 12%) 25%, hsl(20 10% 10%) 50%, hsl(0 0% 9%) 75%, hsl(30 20% 11%) 100%)',
+        backgroundSize: '400% 400%',
+      }} />
+      {/* Soft ambient glow - nude/warm */}
+      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full bg-gold/[0.025] blur-[150px] animate-hero-glow" />
+      <div className="absolute bottom-1/4 right-1/4 w-[350px] h-[350px] rounded-full bg-nude/[0.03] blur-[130px] animate-hero-glow-alt" />
+
+      {/* Profile button (top-right) */}
+      {isAuthenticated && onProfile && (
+        <button
+          onClick={onProfile}
+          className="ios-press absolute top-6 right-6 z-20 w-10 h-10 rounded-full bg-primary-foreground/[0.1] backdrop-blur-md border border-primary-foreground/[0.12] flex items-center justify-center text-primary-foreground/95 hover:text-primary-foreground hover:bg-primary-foreground/[0.15] transition-all"
+        >
+          <User className="w-5 h-5" />
+        </button>
+      )}
+
+      {/* Content — mobile: vertical / desktop: side-by-side */}
+      <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 pb-16 pt-12 lg:flex-row lg:justify-center lg:gap-16 lg:px-16 lg:pb-8">
+        {/* 1. IMAGEM */}
+        <div className="relative w-64 h-44 mb-3 animate-fade-in lg:w-80 lg:h-52 lg:mb-0 lg:shrink-0">
+          <div className="absolute inset-0 rounded-full bg-gold/[0.08] blur-[60px] scale-125 animate-hero-glow" />
+          <img
+            src={professionalImg}
+            alt="Fernanda Hahn"
+            className="relative w-full h-full object-contain"
+          />
+        </div>
+
+        {/* 2. CHAMADA + BOTÕES */}
+        <div className="flex flex-col items-center lg:items-start">
+          <div className="text-center max-w-sm animate-fade-in lg:text-left" style={{ animationDelay: '0.15s', animationFillMode: 'both' }}>
+            <p className="font-body text-xs text-gold/80 tracking-[0.25em] uppercase leading-relaxed lg:text-sm">
+              Agende seu procedimento com segurança e resultado profissional
+            </p>
+          </div>
+
+          {/* 3. BOTÕES */}
+          <div className="w-full max-w-[280px] mt-8 space-y-2.5 px-4 animate-fade-in lg:px-0" style={{ animationDelay: '0.3s', animationFillMode: 'both' }}>
+            {isAuthenticated ? (
+              <>
+                <button
+                  onClick={onSchedule}
+                  className="btn-hero-shine ios-press group flex items-center justify-center gap-2 w-full py-3 rounded-full bg-rose text-primary-foreground font-body font-semibold text-[14px] tracking-wide shadow-[0_4px_20px_-4px_hsl(340_30%_50%/0.4)] backdrop-blur-sm"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width={17} viewBox="0 0 24 24" height={17} fill="none" strokeWidth="2.2" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2"/>
+                    <path d="M16 2v4M8 2v4M3 10h18"/>
+                    <circle cx="12" cy="16" r="1.5" fill="currentColor"/>
+                  </svg>
+                  <span>Agendar</span>
+                  <span className="btn-overlay" aria-hidden />
+                  <span className="btn-shine" aria-hidden />
+                </button>
+                <button
+                  onClick={onProfile}
+                  className="btn-hero-shine ios-press group flex items-center justify-center gap-2 w-full py-3 rounded-full bg-rose text-primary-foreground font-body font-semibold text-[14px] tracking-wide shadow-[0_4px_20px_-4px_hsl(340_30%_50%/0.4)] backdrop-blur-sm"
+                >
+                  <User className="w-4 h-4" />
+                  <span>Meu Perfil</span>
+                  <span className="btn-overlay" aria-hidden />
+                  <span className="btn-shine" aria-hidden />
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={onLogin}
+                  className="btn-hero-shine ios-press group flex items-center justify-center gap-2 w-full py-3 rounded-full bg-rose text-primary-foreground font-body font-semibold text-[14px] tracking-wide shadow-[0_4px_20px_-4px_hsl(340_30%_50%/0.4)] backdrop-blur-sm"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width={17} viewBox="0 0 24 24" height={17} fill="none" strokeWidth="2.2" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="8" r="4"/>
+                    <path d="M5 20c0-3.3137 3.134-6 7-6s7 2.6863 7 6"/>
+                  </svg>
+                  <span>Entrar</span>
+                  <span className="btn-overlay" aria-hidden />
+                  <span className="btn-shine" aria-hidden />
+                </button>
+                <button
+                  onClick={onSchedule}
+                  className="btn-hero-shine ios-press group flex items-center justify-center gap-2 w-full py-3 rounded-full bg-rose text-primary-foreground font-body font-semibold text-[14px] tracking-wide shadow-[0_4px_20px_-4px_hsl(340_30%_50%/0.4)] backdrop-blur-sm"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width={17} viewBox="0 0 24 24" height={17} fill="none" strokeWidth="2.2" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2"/>
+                    <path d="M16 2v4M8 2v4M3 10h18"/>
+                    <circle cx="12" cy="16" r="1.5" fill="currentColor"/>
+                  </svg>
+                  <span>Cadastrar</span>
+                  <span className="btn-overlay" aria-hidden />
+                  <span className="btn-shine" aria-hidden />
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* 4. AVALIAÇÕES — dentro do hero, abaixo dos botões */}
+          <div className="w-screen max-w-[100vw] mt-8 px-6 animate-fade-in lg:w-full lg:max-w-[640px] lg:px-0" style={{ animationDelay: '0.45s', animationFillMode: 'both' }}>
+            <ReviewsSection />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+};
+
+export default HeroSection;

@@ -1,0 +1,187 @@
+import { describe, expect, it } from "vitest";
+import {
+  AgendamentoCaixa,
+  CaixaMovimentacao,
+  calculateCommission,
+  calculateDailyClosing,
+  classifyInstallmentMovement,
+  formatInstallmentDescription,
+  normalizePaymentMethod,
+  sumMovementsForPeriod,
+  getCommissionRateForDate,
+  saveNewCommissionRate,
+} from "./caixa";
+import { getPaymentDate } from "./utils";
+
+
+const movement = (
+  id: string,
+  referenceId: string,
+  value: number,
+  paymentDate: string,
+  overrides: Partial<CaixaMovimentacao> = {},
+): CaixaMovimentacao => ({
+  id,
+  referencia_tipo: "agendamento",
+  referencia_id: referenceId,
+  tipo: value >= 0 ? "entrada" : "estorno",
+  valor: value,
+  forma_pagamento: "pix",
+  data_pagamento: paymentDate,
+  ocorrido_em: `${paymentDate}T15:00:00.000Z`,
+  origem: "test",
+  contabiliza_comissao: true,
+  inferido: false,
+  ...overrides,
+});
+
+describe("caixa por data real de pagamento", () => {
+  const appointments: AgendamentoCaixa[] = [
+    { id: "mayara", data_agendamento: "2026-09-01", status: "concluido", servico: "Design", valor: 65, valor_pago: 65 },
+    { id: "fernanda", data_agendamento: "2026-09-01", status: "confirmado", servico: "Micropigmentação", valor: 550, valor_pago: 550 },
+    { id: "eduardo", data_agendamento: "2026-09-01", status: "confirmado", servico: "Tatuagem", valor: 200, valor_pago: 0 },
+    { id: "angela", data_agendamento: "2026-09-01", status: "confirmado", servico: "Design", valor: 50, valor_pago: 0 },
+    { id: "cristiane", data_agendamento: "2026-09-01", status: "confirmado", servico: "A definir", valor: 0, valor_pago: 0 },
+    { id: "julia", data_agendamento: "2026-09-10", status: "confirmado", servico: "Tatuagem", valor: 1100, valor_pago: 1100 },
+  ];
+
+  const movements: CaixaMovimentacao[] = [
+    movement("m-mayara", "mayara", 65, "2026-09-01"),
+    movement("m-fernanda", "fernanda", 550, "2026-08-24"),
+    movement("m-julia", "julia", 1100, "2026-08-25", { forma_pagamento: "cartao" }),
+  ];
+
+  it("não traz para setembro um pagamento de agosto de atendimento futuro", () => {
+    expect(sumMovementsForPeriod(movements, "2026-09-01", "2026-09-30")).toBe(65);
+  });
+
+  it("fecha 01/09 com R$ 65 recebidos e concilia o pagamento anterior", () => {
+    const closing = calculateDailyClosing(appointments, movements, "2026-09-01");
+
+    expect(closing.recebido).toBe(65);
+    expect(closing.recebidoAnteriormente).toBe(550);
+    expect(closing.total).toBe(865);
+    expect(closing.pendente).toBe(250);
+    expect(closing.progressPercent).toBe(71);
+    expect(closing.qtd).toBe(5);
+  });
+
+  it("calcula a comissão apenas sobre o que entrou no dia", () => {
+    expect(calculateCommission([movements[0]], 40)).toEqual({ base: 65, tips: 0, total: 26 });
+  });
+
+  it("aplica taxas de comissão por vigência sem alterar comissões antigas", () => {
+    const history = [
+      { startDate: "0000-01-01", rate: 40 },
+      { startDate: "2026-10-27", rate: 50 },
+    ];
+    // Pagamento anterior a 27/10 continua a 40%
+    const movOld = movement("m-old", "old", 100, "2026-10-20");
+    // Pagamento a partir de 27/10 usa 50%
+    const movNew = movement("m-new", "new", 100, "2026-10-27");
+
+    expect(calculateCommission([movOld], 50, history).total).toBe(40);
+    expect(calculateCommission([movNew], 50, history).total).toBe(50);
+    expect(calculateCommission([movOld, movNew], 50, history).total).toBe(90);
+  });
+
+  it("considera estornos no período", () => {
+    const refund = movement("refund", "mayara", -15, "2026-09-01");
+    expect(sumMovementsForPeriod([...movements, refund], "2026-09-01", "2026-09-30")).toBe(50);
+  });
+
+  it("normaliza as formas de pagamento usadas no projeto", () => {
+    expect(normalizePaymentMethod("pix_woovi")).toBe("pix");
+    expect(normalizePaymentMethod("cartão de crédito")).toBe("cartao");
+    expect(normalizePaymentMethod("dinheiro")).toBe("dinheiro");
+  });
+});
+
+describe("getPaymentDate - resolução da data real de pagamento", () => {
+  it("prioriza paid_at quando presente e ajusta timezone local", () => {
+    const ag = {
+      data_agendamento: "2026-09-05",
+      paid_at: "2026-08-25T15:30:00.000Z",
+      created_at: "2026-08-25T15:20:00.000Z",
+    };
+    expect(getPaymentDate(ag)).toBe("2026-08-25");
+  });
+
+  it("usa created_at quando paid_at não estiver definido", () => {
+    const ag = {
+      data_agendamento: "2026-09-05",
+      paid_at: null,
+      created_at: "2026-08-25T10:00:00.000Z",
+    };
+    expect(getPaymentDate(ag)).toBe("2026-08-25");
+  });
+
+  it("prioriza data_venda para vendas de produtos", () => {
+    const venda = {
+      data_agendamento: "2026-09-01",
+      data_venda: "2026-08-20",
+      created_at: "2026-08-25T10:00:00.000Z",
+    };
+    expect(getPaymentDate(venda)).toBe("2026-08-20");
+  });
+
+  it("cai em data_agendamento apenas se não houver paid_at nem created_at", () => {
+    const ag = {
+      data_agendamento: "2026-09-05",
+      paid_at: null,
+      created_at: null,
+    };
+    expect(getPaymentDate(ag)).toBe("2026-09-05");
+  });
+});
+
+describe("identificação de parcelas parciais e quitações no Caixa", () => {
+  it("identifica descrição de parcela com serviço, referência de data e observação", () => {
+    const desc = formatInstallmentDescription({
+      servico: "Micropigmentação",
+      valorPagoAntes: 100,
+      valorParcela: 100,
+      valorTotal: 400,
+      parcelaNumero: 2,
+      observacao: "2ª parcela PIX",
+      dataAtendimento: "2026-11-15",
+      dataPagamento: "2026-11-25",
+    });
+
+    expect(desc).toBe("Parcela 2 · Micropigmentação (ref. 15/11) — 2ª parcela PIX");
+  });
+
+  it("identifica quitação final quando liquida o restante da dívida", () => {
+    const desc = formatInstallmentDescription({
+      servico: "Tatuagem",
+      valorPagoAntes: 150,
+      valorParcela: 250,
+      valorTotal: 400,
+      parcelaNumero: 2,
+      dataAtendimento: "2026-11-10",
+      dataPagamento: "2026-11-25",
+    });
+
+    expect(desc).toBe("Quitação (Parcela 2) · Tatuagem (ref. 10/11)");
+  });
+
+  it("classifica movimento de parcela com saldo restante no extrato do Caixa", () => {
+    const mov = movement("mov-p1", "ag-10", 100, "2026-11-25", {
+      descricao: "Parcela 1 · Micro Shadow",
+      parcela_numero: 1,
+      valor_total_servico: 300,
+      valor_pago_acumulado: 100,
+      valor_restante: 200,
+      data_atendimento: "2026-11-15",
+      observacao: "Sinal combinado",
+    });
+
+    const info = classifyInstallmentMovement(mov);
+    expect(info.kind).toBe("parcela");
+    expect(info.badgeLabel).toBe("Parcela 1");
+    expect(info.refDateText).toBe("Atend. 15/11");
+    expect(info.observacaoText).toBe("Sinal combinado");
+    expect(info.progressText).toContain("falta");
+  });
+});
+
