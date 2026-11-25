@@ -43,7 +43,9 @@ async function initOneSignal(): Promise<void> {
       serviceWorkerParam: { scope: "/" },
       serviceWorkerPath: "OneSignalSDKWorker.js",
       welcomeNotification: {
-        disable: true,
+        disable: false,
+        title: "Fernanda Hahn Studio ✨",
+        message: "Notificações ativadas com sucesso! Você receberá confirmações e lembretes aqui.",
       },
     } as any);
   })();
@@ -172,6 +174,34 @@ export function usePushNotifications({ role, userId, autoInit = true }: UsePushO
 
       await savePlayerId(id);
       await refreshState();
+
+      // Dispara a notificação de boas-vindas imediatamente
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        try {
+          if ("serviceWorker" in navigator && navigator.serviceWorker.controller) {
+            navigator.serviceWorker.ready.then((reg) => {
+              reg.showNotification("Fernanda Hahn Studio ✨", {
+                body: "Notificações ativadas com sucesso! Você receberá confirmações e lembretes aqui.",
+                icon: "/icon-512.png",
+                badge: "/icon-512.png",
+              });
+            }).catch(() => {
+              new Notification("Fernanda Hahn Studio ✨", {
+                body: "Notificações ativadas com sucesso! Você receberá confirmações e lembretes aqui.",
+                icon: "/icon-512.png",
+              });
+            });
+          } else {
+            new Notification("Fernanda Hahn Studio ✨", {
+              body: "Notificações ativadas com sucesso! Você receberá confirmações e lembretes aqui.",
+              icon: "/icon-512.png",
+            });
+          }
+        } catch (err) {
+          console.warn("Welcome notification triggered fallback:", err);
+        }
+      }
+
       toast.success("🔔 Notificações ativadas!");
       return true;
     } catch (e) {

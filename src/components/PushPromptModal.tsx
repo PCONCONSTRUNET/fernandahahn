@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Bell, X, Sparkles } from "lucide-react";
 import { usePushNotifications } from "@/hooks/use-push-notifications";
+import { supabase } from "@/integrations/supabase/client";
 
 const STORAGE_KEY = "push-prompt-asked-v1";
 const DELAY_MS = 2500;
@@ -10,13 +11,34 @@ interface Props {
   excludePaths?: string[];
 }
 
-const PushPromptModal = ({ excludePaths = ["/admin"] }: Props) => {
+const PushPromptModal = ({ excludePaths = ["/admin", "/auth"] }: Props) => {
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
-  const { supported, permission, subscribed, loading, enable } =
-    usePushNotifications({ role: "cliente", autoInit: true });
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setIsAuthenticated(!!session);
+      setUserId(session?.user?.id ?? null);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAuthenticated(!!session);
+      setUserId(session?.user?.id ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const { supported, permission, subscribed, loading, enable } =
+    usePushNotifications({ role: "cliente", userId, autoInit: isAuthenticated });
+
+  useEffect(() => {
+    // Só exibe o pop-up APÓS o cliente se cadastrar ou fazer login!
+    if (!isAuthenticated) return;
     // Excluded routes
     if (excludePaths.some((p) => window.location.pathname.startsWith(p))) return;
     // Already asked
@@ -30,7 +52,7 @@ const PushPromptModal = ({ excludePaths = ["/admin"] }: Props) => {
 
     const t = setTimeout(() => setOpen(true), DELAY_MS);
     return () => clearTimeout(t);
-  }, [supported, permission, subscribed, excludePaths]);
+  }, [isAuthenticated, supported, permission, subscribed, excludePaths]);
 
   const dismiss = () => {
     setClosing(true);
