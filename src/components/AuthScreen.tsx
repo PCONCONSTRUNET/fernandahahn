@@ -150,7 +150,7 @@ const AuthScreen = ({ onSuccess, onBack, initialMode = "signup" }: AuthScreenPro
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-4 animate-fade-in overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 animate-fade-in overflow-y-auto overflow-x-hidden overscroll-contain">
       {/* Full background matching HeroSection */}
       <div className="absolute inset-0 animate-bg-drift" style={{
         background: 'linear-gradient(135deg, hsl(0 0% 8%) 0%, hsl(30 15% 12%) 25%, hsl(20 10% 10%) 50%, hsl(0 0% 9%) 75%, hsl(30 20% 11%) 100%)',
@@ -161,13 +161,13 @@ const AuthScreen = ({ onSuccess, onBack, initialMode = "signup" }: AuthScreenPro
       {/* Dark overlay */}
       <div className="absolute inset-0 bg-black/40" onClick={onBack} />
 
-      {/* iOS-style glass modal — compact with reflective sheen */}
-      <div className="relative w-full max-w-[355px] lg:max-w-sm max-h-[92dvh] overflow-y-auto custom-scrollbar rounded-3xl border border-primary-foreground/[0.1] bg-charcoal/75 backdrop-blur-2xl shadow-[0_25px_60px_-12px_rgba(0,0,0,0.6)] px-6 py-5 space-y-3.5 animate-scale-in">
+      {/* iOS-style glass modal — scroll vertical suave sem barra horizontal cortando */}
+      <div className="relative w-full max-w-[360px] lg:max-w-sm max-h-[90dvh] overflow-y-auto overflow-x-hidden rounded-3xl border border-primary-foreground/[0.1] bg-charcoal/85 backdrop-blur-2xl shadow-[0_25px_60px_-12px_rgba(0,0,0,0.6)] px-6 pt-5 pb-6 space-y-3.5 animate-scale-in overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden my-auto">
         {/* Reflective highlights */}
         <div className="pointer-events-none absolute inset-0 rounded-3xl bg-gradient-to-br from-primary-foreground/[0.08] via-transparent to-transparent" />
         <div className="pointer-events-none absolute -top-px left-6 right-6 h-px bg-gradient-to-r from-transparent via-primary-foreground/40 to-transparent" />
         <div className="pointer-events-none absolute inset-x-0 top-0 h-1/2 rounded-t-3xl bg-gradient-to-b from-primary-foreground/[0.06] to-transparent" />
-        <div className="pointer-events-none absolute -inset-x-10 -top-20 h-40 bg-gradient-to-b from-gold/[0.08] to-transparent blur-2xl" />
+        <div className="pointer-events-none absolute inset-x-0 -top-20 h-40 bg-gradient-to-b from-gold/[0.08] to-transparent blur-2xl" />
 
         {/* Close */}
         <button
