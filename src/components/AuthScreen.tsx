@@ -122,7 +122,25 @@ const AuthScreen = ({ onSuccess, onBack, initialMode = "signup" }: AuthScreenPro
             setLoading(false);
             return;
           }
+          // Descobre o e-mail da conta pelo telefone (só devolve se a senha estiver correta).
+          // Contas antigas criadas só com telefone usam o e-mail interno como alternativa.
           loginEmail = getEmailFromWhatsapp(digits);
+          try {
+            const { data: emailByPhone, error: rpcError } = await (supabase as any).rpc(
+              "login_email_for_phone",
+              { p_phone: digits, p_password: senha }
+            );
+            if (rpcError?.message?.includes("TOO_MANY_ATTEMPTS")) {
+              setError("Muitas tentativas. Aguarde alguns minutos e tente novamente.");
+              setLoading(false);
+              return;
+            }
+            if (!rpcError && typeof emailByPhone === "string" && emailByPhone) {
+              loginEmail = emailByPhone;
+            }
+          } catch {
+            // segue com o e-mail interno
+          }
         }
 
         const { error: signInError } = await supabase.auth.signInWithPassword({
