@@ -67,9 +67,7 @@ async function showWelcomeNotificationOnce(playerId: string): Promise<void> {
   } catch {
     // storage indisponível: segue só com a tag para deduplicar
   }
-  // O iOS já mostra "from Fernanda Hahn" (nome do app) acima do título.
-  // Usamos o caractere invisível U+3164 (Hangul Filler) como título para ficar "sem título".
-  const title = "\u3164";
+  const title = "FERNANDA HAHN";
   const options: NotificationOptions = {
     body: "Notificações ativadas! Você receberá confirmações e lembretes dos seus agendamentos por aqui. ✨",
     icon: "/icon-512.png",
