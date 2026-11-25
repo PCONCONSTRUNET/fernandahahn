@@ -67,9 +67,11 @@ async function showWelcomeNotificationOnce(playerId: string): Promise<void> {
   } catch {
     // storage indisponível: segue só com a tag para deduplicar
   }
-  const title = "Fernanda Hahn Studio ✨";
+  // O iOS já mostra "from Fernanda Hahn" (nome do app) acima do título,
+  // então o título não repete o nome do estúdio.
+  const title = "Notificações ativadas ✨";
   const options: NotificationOptions = {
-    body: "Notificações ativadas com sucesso! Você receberá confirmações e lembretes aqui.",
+    body: "Tudo certo! Você receberá confirmações e lembretes dos seus agendamentos por aqui.",
     icon: "/icon-512.png",
     badge: "/icon-512.png",
     tag: "welcome-push",
