@@ -1,8 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-const envUrl = import.meta.env.VITE_SUPABASE_URL?.trim() || '';
-const envKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim() || '';
+const isTestEnv = typeof process !== 'undefined' && process.env?.NODE_ENV === 'test';
+const envUrl = !isTestEnv ? (import.meta.env.VITE_SUPABASE_URL?.trim() || '') : '';
+const envKey = !isTestEnv ? (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim() || '') : '';
 
 export const isSupabaseConfigured = Boolean(envUrl && envKey);
 export const SUPABASE_URL = envUrl;
