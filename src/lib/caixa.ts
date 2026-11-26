@@ -39,6 +39,7 @@ export interface LocalPagamentoHistorico {
 }
 
 export const CAIXA_MOVIMENTACOES_PREVIEW_KEY = "studio_caixa_movimentacoes_preview";
+export const CAIXA_RETIRADAS_PREVIEW_KEY = "studio_caixa_retiradas_preview";
 export const PAGAMENTOS_HIST_PREVIEW_KEY = "studio_pagamento_historico_preview";
 export const CAIXA_UPDATED_EVENT = "studio:caixa-updated";
 
@@ -294,6 +295,22 @@ export const deleteLocalPagamentoHistorico = (histId: string) => {
     PAGAMENTOS_HIST_PREVIEW_KEY,
     current.filter((h) => h.id !== histId),
   );
+};
+
+export const deleteLocalCaixaMovimentacao = (movId: string) => {
+  const current = getLocalCaixaMovimentacoes();
+  writeLocalList(
+    CAIXA_MOVIMENTACOES_PREVIEW_KEY,
+    current.filter((m) => m.id !== movId),
+  );
+  notifyCaixaUpdated();
+};
+
+export const getLocalRetiradasPreview = <T = any>(): T[] =>
+  readLocalList<T>(CAIXA_RETIRADAS_PREVIEW_KEY);
+
+export const saveLocalRetiradasPreview = <T = any>(items: T[]) => {
+  writeLocalList(CAIXA_RETIRADAS_PREVIEW_KEY, items);
 };
 
 export interface PersistPaymentInput {

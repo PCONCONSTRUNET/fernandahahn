@@ -21,6 +21,7 @@ import {
   ArrowUpRight,
   Sparkles,
   Settings,
+  Trash2,
 } from "lucide-react";
 import {
   AreaChart,
@@ -37,6 +38,7 @@ import {
 import pixIcon from "@/assets/pix-icon.png";
 import { toast } from "sonner";
 import { supabase, isSupabaseConfigured } from "@/integrations/supabase/client";
+import { useSafeConfirm } from "@/contexts/ConfirmContext";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -59,6 +61,9 @@ import {
   normalizePaymentMethod,
   classifyInstallmentMovement,
   getLocalCaixaMovimentacoes,
+  deleteLocalCaixaMovimentacao,
+  getLocalRetiradasPreview,
+  saveLocalRetiradasPreview,
   CAIXA_UPDATED_EVENT,
   notifyCaixaUpdated,
 } from "@/lib/caixa";
@@ -131,6 +136,7 @@ const getExpDate = (d: { data_pagamento?: string | null; data_vencimento: string
   d.data_pagamento || d.data_vencimento;
 
 const CaixaTab = ({ agendamentos, getClientName, onUpdate }: Props) => {
+  const safeConfirm = useSafeConfirm();
   const [modalConfig, setModalConfig] = useState<{ open: boolean; tab: "entrada" | "saida" }>({
     open: false,
     tab: "entrada",
@@ -204,6 +210,8 @@ const CaixaTab = ({ agendamentos, getClientName, onUpdate }: Props) => {
   const [savingSaldo, setSavingSaldo] = useState(false);
   const [showPaymentMethodModal, setShowPaymentMethodModal] = useState(false);
   const [selectedExtratoItem, setSelectedExtratoItem] = useState<any | null>(null);
+  const [confirmModalDelete, setConfirmModalDelete] = useState(false);
+  const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
 
   const [despesas, setDespesas] = useState<DespesaRow[]>([]);
   const [movimentacoes, setMovimentacoes] = useState<CaixaMovimentacao[]>([]);
@@ -311,13 +319,7 @@ const CaixaTab = ({ agendamentos, getClientName, onUpdate }: Props) => {
   useEffect(() => {
     let cancelled = false;
     if (!isSupabaseConfigured) {
-      try {
-        const raw = localStorage.getItem("studio_caixa_retiradas_preview");
-        const localRows: DespesaRow[] = raw ? JSON.parse(raw) : [];
-        if (!cancelled) setDespesas(Array.isArray(localRows) ? localRows : []);
-      } catch {
-        if (!cancelled) setDespesas([]);
-      }
+      if (!cancelled) setDespesas(getLocalRetiradasPreview<DespesaRow>());
       return;
     }
 
@@ -763,6 +765,74 @@ const CaixaTab = ({ agendamentos, getClientName, onUpdate }: Props) => {
     }
     return entries;
   }, [mesAppointments, serviceSearch]);
+
+  const executeDeleteExtratoItem = async (it: any) => {
+    const isGasto = Boolean(it._is_gasto);
+    const keyId = String(isGasto ? it.id : it._movimentoId);
+    setDeletingItemId(keyId);
+    try {
+      if (isGasto) {
+        if (!isSupabaseConfigured) {
+          const next = getLocalRetiradasPreview<DespesaRow>().filter((d) => d.id !== it.id);
+          saveLocalRetiradasPreview(next);
+          setDespesas(next);
+        } else {
+          const { error } = await (supabase.from as any)("despesas").delete().eq("id", it.id);
+          if (error) throw error;
+          setDespesas((prev) => prev.filter((d) => d.id !== it.id));
+          setRefreshTick((t) => t + 1);
+        }
+      } else {
+        const movId = String(it._movimentoId || "");
+        if (!isSupabaseConfigured) {
+          deleteLocalCaixaMovimentacao(movId);
+          setMovimentacoes((prev) => prev.filter((m) => m.id !== movId));
+        } else {
+          const { data: rpcRes, error: rpcErr } = await (supabase.rpc as any)(
+            "excluir_lancamento_caixa",
+            { p_movimento_id: movId },
+          );
+          if (rpcErr) throw rpcErr;
+          if (rpcRes && rpcRes.deleted === false) {
+            throw new Error("Lançamento não encontrado");
+          }
+          setMovimentacoes((prev) => prev.filter((m) => m.id !== movId));
+          setRefreshTick((t) => t + 1);
+        }
+      }
+
+      if (selectedExtratoItem?._movimentoId === it._movimentoId) {
+        setSelectedExtratoItem(null);
+      }
+      setConfirmModalDelete(false);
+      notifyCaixaUpdated();
+      toast.success("Lançamento excluído do Caixa!");
+      onUpdate?.();
+    } catch (err: any) {
+      toast.error("Erro ao excluir lançamento: " + (err?.message || "Tente novamente"));
+    } finally {
+      setDeletingItemId(null);
+    }
+  };
+
+  const promptDeleteExtratoItem = (it: any) => {
+    const isGasto = Boolean(it._is_gasto);
+    const titulo = isGasto ? it.cliente_nome : getClientName(it.user_id, it.cliente_nome);
+    const val = Math.abs(Number(it.valor_pago || 0));
+    const desc = `Deseja excluir "${titulo}" (${formatCurrency(val)})? Essa ação recalcula o Saldo em Caixa e não pode ser desfeita.`;
+
+    if (safeConfirm) {
+      safeConfirm.confirm({
+        title: "Excluir lançamento",
+        description: desc,
+        confirmText: "Excluir",
+        variant: "destructive",
+        onConfirm: () => executeDeleteExtratoItem(it),
+      });
+    } else if (typeof window !== "undefined" && window.confirm(desc)) {
+      void executeDeleteExtratoItem(it);
+    }
+  };
 
   const exportCSV = () => {
     const header = "Data,Tipo,Descrição,Valor\n";
@@ -1212,86 +1282,104 @@ const CaixaTab = ({ agendamentos, getClientName, onUpdate }: Props) => {
               const isGasto = Boolean(item._is_gasto);
               const val = Number(item.valor_pago || 0);
               const parcelaInfo = !isGasto ? item._parcelaInfo : null;
+              const deleteKey = String(isGasto ? item.id : item._movimentoId);
               return (
-                <button
-                  type="button"
+                <div
                   key={item._movimentoId}
-                  onClick={() => setSelectedExtratoItem(item)}
-                  className="w-full text-left flex items-start justify-between gap-2.5 p-3 rounded-2xl bg-[#252423] border border-primary-foreground/[0.07] hover:border-gold/35 hover:bg-[#2a2928] transition-all cursor-pointer"
+                  className="flex items-center gap-1 rounded-2xl bg-[#252423] border border-primary-foreground/[0.07] hover:border-gold/35 hover:bg-[#2a2928] transition-all pr-2"
                 >
-                  <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                    <span
-                      className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
-                        isGasto || val < 0
-                          ? "bg-rose/15 text-rose"
-                          : parcelaInfo?.kind === "parcela"
-                            ? "bg-amber-500/15 text-amber-300"
-                            : "bg-emerald-500/15 text-emerald-400"
-                      }`}
-                    >
-                      {isGasto || val < 0 ? (
-                        <ArrowUpRight className="w-4 h-4" />
-                      ) : (
-                        <ArrowDownLeft className="w-4 h-4" />
-                      )}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <p className="font-body text-[13.5px] font-semibold text-primary-foreground break-words leading-snug">
-                          {isGasto ? item.cliente_nome : getClientName(item.user_id, item.cliente_nome)}
-                        </p>
-                        {parcelaInfo?.badgeLabel && (
-                          <span
-                            className={`px-1.5 py-0.5 rounded-full border font-body text-[9px] font-bold uppercase tracking-wider shrink-0 ${
-                              parcelaInfo.kind === "parcela"
-                                ? "bg-amber-500/15 text-amber-300 border-amber-500/35"
-                                : parcelaInfo.kind === "estorno"
-                                  ? "bg-rose/15 text-rose border-rose/35"
-                                  : "bg-emerald-500/15 text-emerald-300 border-emerald-500/35"
-                            }`}
-                          >
-                            {parcelaInfo.badgeLabel}
-                          </span>
-                        )}
-                      </div>
-                      <p className="font-body text-[11px] text-primary-foreground/65 break-words leading-snug mt-0.5">
-                        {formatDateShort(item.data_fatura)} · {item.servico}
-                        {!isGasto && item.forma_pagamento ? ` · ${item.forma_pagamento.toUpperCase()}` : ""}
-                      </p>
-                      {(parcelaInfo?.progressText || parcelaInfo?.refDateText || parcelaInfo?.observacaoText) && (
-                        <p className="font-body text-[10px] text-primary-foreground/50 break-words leading-snug mt-0.5">
-                          {[parcelaInfo.progressText, parcelaInfo.refDateText, parcelaInfo.observacaoText]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="text-right shrink-0 flex items-center gap-1.5">
-                    <div>
-                      <p
-                        className={`font-heading text-[14px] font-bold tabular-nums ${
-                          isGasto || val < 0 ? "text-rose" : "text-emerald-400"
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConfirmModalDelete(false);
+                      setSelectedExtratoItem(item);
+                    }}
+                    className="flex-1 min-w-0 text-left flex items-start justify-between gap-2.5 p-3 cursor-pointer"
+                  >
+                    <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                      <span
+                        className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
+                          isGasto || val < 0
+                            ? "bg-rose/15 text-rose"
+                            : parcelaInfo?.kind === "parcela"
+                              ? "bg-amber-500/15 text-amber-300"
+                              : "bg-emerald-500/15 text-emerald-400"
                         }`}
                       >
-                        {val >= 0 ? `+ ${formatCurrency(val)}` : formatCurrency(val)}
-                      </p>
-                      <p className="font-body text-[10px] text-primary-foreground/45">
-                        {isGasto
-                          ? `Saída (${item._gasto_escopo})`
-                          : parcelaInfo?.kind === "parcela"
-                            ? "Parcela"
-                            : parcelaInfo?.kind === "quitacao"
-                              ? "Quitação"
-                              : val >= 0
-                                ? "Recebido"
-                                : "Estorno"}
-                      </p>
+                        {isGasto || val < 0 ? (
+                          <ArrowUpRight className="w-4 h-4" />
+                        ) : (
+                          <ArrowDownLeft className="w-4 h-4" />
+                        )}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="font-body text-[13.5px] font-semibold text-primary-foreground break-words leading-snug">
+                            {isGasto ? item.cliente_nome : getClientName(item.user_id, item.cliente_nome)}
+                          </p>
+                          {parcelaInfo?.badgeLabel && (
+                            <span
+                              className={`px-1.5 py-0.5 rounded-full border font-body text-[9px] font-bold uppercase tracking-wider shrink-0 ${
+                                parcelaInfo.kind === "parcela"
+                                  ? "bg-amber-500/15 text-amber-300 border-amber-500/35"
+                                  : parcelaInfo.kind === "estorno"
+                                    ? "bg-rose/15 text-rose border-rose/35"
+                                    : "bg-emerald-500/15 text-emerald-300 border-emerald-500/35"
+                              }`}
+                            >
+                              {parcelaInfo.badgeLabel}
+                            </span>
+                          )}
+                        </div>
+                        <p className="font-body text-[11px] text-primary-foreground/65 break-words leading-snug mt-0.5">
+                          {formatDateShort(item.data_fatura)} · {item.servico}
+                          {!isGasto && item.forma_pagamento ? ` · ${item.forma_pagamento.toUpperCase()}` : ""}
+                        </p>
+                        {(parcelaInfo?.progressText || parcelaInfo?.refDateText || parcelaInfo?.observacaoText) && (
+                          <p className="font-body text-[10px] text-primary-foreground/50 break-words leading-snug mt-0.5">
+                            {[parcelaInfo.progressText, parcelaInfo.refDateText, parcelaInfo.observacaoText]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </p>
+                        )}
+                      </div>
                     </div>
-                    <ChevronRight className="w-3.5 h-3.5 text-primary-foreground/35 shrink-0" />
-                  </div>
-                </button>
+
+                    <div className="text-right shrink-0 flex items-center gap-1.5">
+                      <div>
+                        <p
+                          className={`font-heading text-[14px] font-bold tabular-nums ${
+                            isGasto || val < 0 ? "text-rose" : "text-emerald-400"
+                          }`}
+                        >
+                          {val >= 0 ? `+ ${formatCurrency(val)}` : formatCurrency(val)}
+                        </p>
+                        <p className="font-body text-[10px] text-primary-foreground/45">
+                          {isGasto
+                            ? `Saída (${item._gasto_escopo})`
+                            : parcelaInfo?.kind === "parcela"
+                              ? "Parcela"
+                              : parcelaInfo?.kind === "quitacao"
+                                ? "Quitação"
+                                : val >= 0
+                                  ? "Recebido"
+                                  : "Estorno"}
+                        </p>
+                      </div>
+                      <ChevronRight className="w-3.5 h-3.5 text-primary-foreground/35 shrink-0" />
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Excluir lançamento"
+                    title="Excluir lançamento"
+                    disabled={deletingItemId === deleteKey}
+                    onClick={() => promptDeleteExtratoItem(item)}
+                    className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 text-primary-foreground/35 hover:text-rose hover:bg-rose/10 transition-all disabled:opacity-40"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               );
             })}
 
@@ -2087,7 +2175,7 @@ const CaixaTab = ({ agendamentos, getClientName, onUpdate }: Props) => {
                       };
                       const next = [localRow, ...despesas];
                       setDespesas(next);
-                      localStorage.setItem("studio_caixa_retiradas_preview", JSON.stringify(next));
+                      saveLocalRetiradasPreview(next);
                     } else {
                       const { error } = await (supabase.from as any)("despesas").insert([payload]);
                       if (error) throw error;
@@ -2114,8 +2202,16 @@ const CaixaTab = ({ agendamentos, getClientName, onUpdate }: Props) => {
       </Dialog>
 
       {/* Modal de detalhes completos do lançamento do Extrato */}
-      <Dialog open={!!selectedExtratoItem} onOpenChange={(open) => !open && setSelectedExtratoItem(null)}>
-        <DialogContent className="bg-charcoal border border-primary-foreground/[0.12] text-primary-foreground max-w-md rounded-3xl p-5">
+      <Dialog
+        open={!!selectedExtratoItem}
+        onOpenChange={(open) => {
+          if (!open) {
+            setConfirmModalDelete(false);
+            setSelectedExtratoItem(null);
+          }
+        }}
+      >
+        <DialogContent className="bg-charcoal border border-primary-foreground/[0.12] text-primary-foreground max-w-md rounded-3xl p-5 max-h-[90dvh] overflow-y-auto scrollbar-hide">
           {selectedExtratoItem && (() => {
             const it = selectedExtratoItem;
             const isGasto = Boolean(it._is_gasto);
@@ -2266,13 +2362,50 @@ const CaixaTab = ({ agendamentos, getClientName, onUpdate }: Props) => {
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setSelectedExtratoItem(null)}
-                  className="w-full py-2.5 rounded-xl bg-primary-foreground/[0.08] hover:bg-primary-foreground/[0.14] text-primary-foreground font-body text-[13px] font-semibold transition-all"
-                >
-                  Fechar
-                </button>
+                {confirmModalDelete ? (
+                  <div className="rounded-2xl border border-rose/30 bg-rose/[0.08] p-3 space-y-2.5">
+                    <p className="font-body text-[12px] text-primary-foreground text-center">
+                      Excluir este lançamento e recalcular o Caixa?
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={deletingItemId === String(isGasto ? it.id : it._movimentoId)}
+                        onClick={() => setConfirmModalDelete(false)}
+                        className="flex-1 py-2 rounded-xl bg-primary-foreground/[0.08] hover:bg-primary-foreground/[0.14] text-primary-foreground font-body text-[12.5px] font-medium transition-all"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        disabled={deletingItemId === String(isGasto ? it.id : it._movimentoId)}
+                        onClick={() => executeDeleteExtratoItem(it)}
+                        className="flex-1 py-2 rounded-xl bg-rose hover:brightness-110 text-white font-body text-[12.5px] font-bold transition-all disabled:opacity-50"
+                      >
+                        {deletingItemId === String(isGasto ? it.id : it._movimentoId)
+                          ? "Excluindo..."
+                          : "Sim, excluir"}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmModalDelete(true)}
+                      className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-rose/10 border border-rose/25 hover:bg-rose/20 text-rose font-body text-[12.5px] font-semibold transition-all"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> Excluir
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedExtratoItem(null)}
+                      className="flex-1 py-2.5 rounded-xl bg-primary-foreground/[0.08] hover:bg-primary-foreground/[0.14] text-primary-foreground font-body text-[13px] font-semibold transition-all"
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })()}

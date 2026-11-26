@@ -5,6 +5,8 @@ import { ConfirmProvider } from "@/contexts/ConfirmContext";
 import PedidosTab from "@/components/PedidosTab";
 import PagamentosTab from "@/components/PagamentosTab";
 import CaixaTab from "@/components/CaixaTab";
+import GastosTab from "@/components/GastosTab";
+import { recordLocalCaixaMovimentacao, toLocalDateISO } from "@/lib/caixa";
 import { ClienteProfile } from "@/components/ClienteFichaModal";
 
 if (
@@ -183,9 +185,60 @@ describe("CaixaTab configuração de comissão e dia de fechamento", () => {
     await waitFor(() => {
       expect(screen.getByText(/Data do lançamento/i)).toBeInTheDocument();
     });
+
+    // Também permite excluir o lançamento pelo modal de detalhes
+    fireEvent.click(screen.getByRole("button", { name: /^Excluir$/i }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Sim, excluir/i })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Sim, excluir/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Retirada de Comissão/i)).not.toBeInTheDocument();
+    });
   });
 
-  it("exibe retiradas de comissão também na aba Pagamentos e abre detalhes completos", async () => {
+  it("permite excluir entrada registrada no extrato do Caixa pelo botão da linha", async () => {
+    const hoje = toLocalDateISO(new Date());
+    recordLocalCaixaMovimentacao({
+      referencia_tipo: "agendamento",
+      referencia_id: "ag-manual-del",
+      tipo: "entrada",
+      valor: 120,
+      forma_pagamento: "pix",
+      data_pagamento: hoje,
+      origem: "manual",
+      descricao: "Entrada Manual",
+      cliente_nome: "Lançamento Avulso Teste",
+      contabiliza_comissao: true,
+      inferido: false,
+    });
+
+    render(
+      <ConfirmProvider>
+        <CaixaTab
+          agendamentos={[]}
+          getClientName={(_, nome) => nome || "Cliente"}
+        />
+      </ConfirmProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Lançamento Avulso Teste/i)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Excluir lançamento/i }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /^Excluir$/i })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Excluir$/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Lançamento Avulso Teste/i)).not.toBeInTheDocument();
+    });
+  });
+
+  it("exibe retiradas de comissão também na aba Pagamentos, abre detalhes e permite excluir", async () => {
     const hoje = (() => {
       const d = new Date();
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -225,6 +278,54 @@ describe("CaixaTab configuração de comissão e dia de fechamento", () => {
     await waitFor(() => {
       expect(screen.getByText(/Data da retirada/i)).toBeInTheDocument();
     });
+
+    fireEvent.click(screen.getByRole("button", { name: /^Excluir$/i }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Sim, excluir/i })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Sim, excluir/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Retiradas de Comissão \(1\)/i)).not.toBeInTheDocument();
+    });
+  });
+});
+
+describe("GastosTab modal compacto mobile", () => {
+  beforeEach(() => {
+    globalThis.localStorage.clear();
+  });
+
+  it("abre modal compacto de Novo Gasto, expande observação sob demanda e registra gasto", async () => {
+    render(
+      <ConfirmProvider>
+        <GastosTab />
+      </ConfirmProvider>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /\+ Novo Gasto/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Esse gasto é:/i)).toBeInTheDocument();
+    });
+
+    expect(screen.queryByPlaceholderText(/Ex: Pago no PIX/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /\+ Adicionar observação/i }));
+    expect(screen.getByPlaceholderText(/Ex: Pago no PIX/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /\+ Agulhas \/ Tintas/i }));
+    const valorInput = screen.getByPlaceholderText("0,00");
+    fireEvent.change(valorInput, { target: { value: "7500" } });
+
+    const obsInput = screen.getByPlaceholderText(/Ex: Pago no PIX/i);
+    fireEvent.change(obsInput, { target: { value: "Fornecedor centro" } });
+
+    fireEvent.click(screen.getByRole("button", { name: /Registrar Gasto/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Agulhas \/ Tintas/i)).toBeInTheDocument();
+    });
+    expect(screen.getByText(/Fornecedor centro/i)).toBeInTheDocument();
   });
 });
 

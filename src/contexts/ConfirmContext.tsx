@@ -104,3 +104,7 @@ export function useConfirm() {
   }
   return context;
 }
+
+export function useSafeConfirm() {
+  return useContext(ConfirmContext);
+}

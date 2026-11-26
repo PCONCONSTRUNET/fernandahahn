@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ArrowDown, ArrowUp, DollarSign, FileText, Check } from "lucide-react";
+import { notifyCaixaUpdated } from "@/lib/caixa";
 
 interface Props {
   open: boolean;
@@ -121,6 +122,7 @@ export default function NovaTransacaoModal({ open, onOpenChange, onSuccess, init
         toast.success(`Gasto (${tipoGasto === "estudio" ? "Estúdio" : "Pessoal"}) contabilizado no Caixa!`);
       }
 
+      notifyCaixaUpdated();
       onSuccess();
       onOpenChange(false);
     } catch (err: any) {
@@ -169,7 +171,7 @@ export default function NovaTransacaoModal({ open, onOpenChange, onSuccess, init
         </div>
 
         {/* Form */}
-        <div className="flex-1 min-h-0 px-5 py-4 space-y-3 overflow-y-auto custom-scrollbar">
+        <div className="flex-1 min-h-0 px-5 py-3.5 space-y-2.5 overflow-y-auto scrollbar-hide">
           <div className="space-y-1">
             <label className="font-body text-[10.5px] font-medium text-primary-foreground/75">Valor (R$)</label>
             <div className="relative">

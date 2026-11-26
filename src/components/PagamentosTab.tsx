@@ -19,6 +19,8 @@ import {
   recordLocalCaixaMovimentacao,
   toLocalDateISO,
   notifyCaixaUpdated,
+  getLocalRetiradasPreview,
+  saveLocalRetiradasPreview,
   CAIXA_UPDATED_EVENT,
 } from "@/lib/caixa";
 
@@ -235,6 +237,45 @@ const PagamentosTab = ({ agendamentos, getClientName, onUpdate, onEdit }: Props)
     });
   };
 
+  const [confirmDeleteRetiradaModal, setConfirmDeleteRetiradaModal] = useState(false);
+  const [deletingRetiradaId, setDeletingRetiradaId] = useState<string | null>(null);
+
+  const executeDeleteRetirada = async (r: RetiradaItem) => {
+    setDeletingRetiradaId(r.id);
+    try {
+      if (!isSupabaseConfigured) {
+        const next = getLocalRetiradasPreview<any>().filter((d) => d.id !== r.id);
+        saveLocalRetiradasPreview(next);
+        setRetiradas((prev) => prev.filter((item) => item.id !== r.id));
+      } else {
+        const { error } = await (supabase.from as any)("despesas").delete().eq("id", r.id);
+        if (error) throw error;
+        setRetiradas((prev) => prev.filter((item) => item.id !== r.id));
+        setRefetchKey((k) => k + 1);
+      }
+      if (selectedRetirada?.id === r.id) setSelectedRetirada(null);
+      setConfirmDeleteRetiradaModal(false);
+      notifyCaixaUpdated();
+      toast.success("Retirada de comissão excluída.");
+      onUpdate?.();
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error?.message || "Erro ao excluir retirada.");
+    } finally {
+      setDeletingRetiradaId(null);
+    }
+  };
+
+  const promptDeleteRetirada = (r: RetiradaItem) => {
+    confirm({
+      title: "Excluir Retirada",
+      description: `Deseja excluir a retirada "${r.descricao || "Retirada de Comissão"}" (${formatCurrency(r.valor)})? O saldo de comissão e o Caixa serão atualizados.`,
+      confirmText: "Excluir",
+      variant: "destructive",
+      onConfirm: () => executeDeleteRetirada(r),
+    });
+  };
+
   const handleDelete = (id: string, tableType: "despesas" | "agendamentos") => {
     confirm({
       title: "Excluir Transação",
@@ -312,17 +353,8 @@ const PagamentosTab = ({ agendamentos, getClientName, onUpdate, onEdit }: Props)
   useEffect(() => {
     let isCancelled = false;
 
-    const readLocalRetiradas = (): RetiradaItem[] => {
-      try {
-        const raw = localStorage.getItem("studio_caixa_retiradas_preview");
-        const parsed = raw ? JSON.parse(raw) : [];
-        return Array.isArray(parsed)
-          ? parsed.filter((d: any) => d.tipo === "comissao" && d.pago)
-          : [];
-      } catch {
-        return [];
-      }
-    };
+    const readLocalRetiradas = (): RetiradaItem[] =>
+      getLocalRetiradasPreview<any>().filter((d: any) => d.tipo === "comissao" && d.pago);
 
     const fetchHistorico = async () => {
       if (!isSupabaseConfigured) {
@@ -1232,37 +1264,54 @@ const PagamentosTab = ({ agendamentos, getClientName, onUpdate, onEdit }: Props)
             {retiradasFiltradas.map((r) => {
               const dt = r.data_pagamento || r.data_vencimento;
               return (
-                <button
+                <div
                   key={r.id}
-                  type="button"
-                  onClick={() => setSelectedRetirada(r)}
-                  className="w-full text-left flex items-center justify-between gap-2.5 p-3.5 rounded-2xl border border-rose/25 bg-rose/[0.06] hover:border-rose/45 transition-all"
+                  className="flex items-center gap-1 rounded-2xl border border-rose/25 bg-rose/[0.06] hover:border-rose/45 transition-all pr-2"
                 >
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <div className="w-9 h-9 rounded-xl bg-rose/15 border border-rose/30 flex items-center justify-center shrink-0">
-                      <ArrowUpRight className="w-4 h-4 text-rose" />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConfirmDeleteRetiradaModal(false);
+                      setSelectedRetirada(r);
+                    }}
+                    className="flex-1 min-w-0 text-left flex items-center justify-between gap-2.5 p-3.5"
+                  >
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <div className="w-9 h-9 rounded-xl bg-rose/15 border border-rose/30 flex items-center justify-center shrink-0">
+                        <ArrowUpRight className="w-4 h-4 text-rose" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-body text-[13.5px] font-semibold text-primary-foreground break-words leading-snug">
+                          {r.descricao || "Retirada de Comissão"}
+                        </p>
+                        <p className="font-body text-[11px] text-primary-foreground/65 mt-0.5">
+                          {formatDate(dt)} · {r.categoria || "Comissão"}
+                        </p>
+                      </div>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="font-body text-[13.5px] font-semibold text-primary-foreground break-words leading-snug">
-                        {r.descricao || "Retirada de Comissão"}
-                      </p>
-                      <p className="font-body text-[11px] text-primary-foreground/65 mt-0.5">
-                        {formatDate(dt)} · {r.categoria || "Comissão"}
-                      </p>
+                    <div className="flex items-center gap-1.5 shrink-0 text-right">
+                      <div>
+                        <p className="font-heading text-[14px] font-bold text-rose tabular-nums">
+                          - {formatCurrency(r.valor)}
+                        </p>
+                        <p className="font-body text-[9.5px] text-rose/80 font-semibold uppercase">
+                          Saída (Comissão)
+                        </p>
+                      </div>
+                      <ChevronRight className="w-3.5 h-3.5 text-primary-foreground/40" />
                     </div>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0 text-right">
-                    <div>
-                      <p className="font-heading text-[14px] font-bold text-rose tabular-nums">
-                        - {formatCurrency(r.valor)}
-                      </p>
-                      <p className="font-body text-[9.5px] text-rose/80 font-semibold uppercase">
-                        Saída (Comissão)
-                      </p>
-                    </div>
-                    <ChevronRight className="w-3.5 h-3.5 text-primary-foreground/40" />
-                  </div>
-                </button>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Excluir retirada"
+                    title="Excluir retirada"
+                    disabled={deletingRetiradaId === r.id}
+                    onClick={() => promptDeleteRetirada(r)}
+                    className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 text-rose/60 hover:text-rose hover:bg-rose/15 transition-all disabled:opacity-40"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               );
             })}
           </div>
@@ -1270,8 +1319,16 @@ const PagamentosTab = ({ agendamentos, getClientName, onUpdate, onEdit }: Props)
       </div>
 
       {/* Modal de detalhes completos da Retirada de Comissão */}
-      <Dialog open={!!selectedRetirada} onOpenChange={(o) => !o && setSelectedRetirada(null)}>
-        <DialogContent className="bg-charcoal border border-primary-foreground/[0.12] text-primary-foreground max-w-md rounded-3xl p-5">
+      <Dialog
+        open={!!selectedRetirada}
+        onOpenChange={(o) => {
+          if (!o) {
+            setConfirmDeleteRetiradaModal(false);
+            setSelectedRetirada(null);
+          }
+        }}
+      >
+        <DialogContent className="bg-charcoal border border-primary-foreground/[0.12] text-primary-foreground max-w-md rounded-3xl p-5 max-h-[90dvh] overflow-y-auto scrollbar-hide">
           {selectedRetirada && (() => {
             const dt = selectedRetirada.data_pagamento || selectedRetirada.data_vencimento;
             const dataExtenso = dt
@@ -1282,6 +1339,7 @@ const PagamentosTab = ({ agendamentos, getClientName, onUpdate, onEdit }: Props)
                   year: "numeric",
                 })
               : "—";
+            const isDeletingThis = deletingRetiradaId === selectedRetirada.id;
             return (
               <div className="space-y-4">
                 <DialogHeader>
@@ -1341,13 +1399,48 @@ const PagamentosTab = ({ agendamentos, getClientName, onUpdate, onEdit }: Props)
                   )}
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setSelectedRetirada(null)}
-                  className="w-full py-2.5 rounded-xl bg-primary-foreground/[0.08] hover:bg-primary-foreground/[0.14] text-primary-foreground font-body text-[13px] font-semibold transition-all"
-                >
-                  Fechar
-                </button>
+                {confirmDeleteRetiradaModal ? (
+                  <div className="rounded-2xl border border-rose/30 bg-rose/[0.08] p-3 space-y-2.5">
+                    <p className="font-body text-[12px] text-primary-foreground text-center">
+                      Excluir esta retirada e restaurar o saldo de comissão?
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={isDeletingThis}
+                        onClick={() => setConfirmDeleteRetiradaModal(false)}
+                        className="flex-1 py-2 rounded-xl bg-primary-foreground/[0.08] hover:bg-primary-foreground/[0.14] text-primary-foreground font-body text-[12.5px] font-medium transition-all"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isDeletingThis}
+                        onClick={() => executeDeleteRetirada(selectedRetirada)}
+                        className="flex-1 py-2 rounded-xl bg-rose hover:brightness-110 text-white font-body text-[12.5px] font-bold transition-all disabled:opacity-50"
+                      >
+                        {isDeletingThis ? "Excluindo..." : "Sim, excluir"}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteRetiradaModal(true)}
+                      className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-rose/10 border border-rose/25 hover:bg-rose/20 text-rose font-body text-[12.5px] font-semibold transition-all"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> Excluir
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedRetirada(null)}
+                      className="flex-1 py-2.5 rounded-xl bg-primary-foreground/[0.08] hover:bg-primary-foreground/[0.14] text-primary-foreground font-body text-[13px] font-semibold transition-all"
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })()}

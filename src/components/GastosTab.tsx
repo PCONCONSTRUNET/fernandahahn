@@ -42,6 +42,7 @@ import {
 import PlusButton from "@/components/ui/plus-button";
 import BinButton from "@/components/ui/bin-button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { notifyCaixaUpdated } from "@/lib/caixa";
 
 type EscopoGasto = "estudio" | "pessoal";
 
@@ -173,6 +174,7 @@ const GastosTab = () => {
   const [formPago, setFormPago] = useState(true);
   const [formObs, setFormObs] = useState("");
   const [formFixa, setFormFixa] = useState(false);
+  const [showObsField, setShowObsField] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const loadGastos = useCallback(async () => {
@@ -395,6 +397,7 @@ const GastosTab = () => {
     setFormPago(true);
     setFormObs("");
     setFormFixa(false);
+    setShowObsField(false);
     setModalOpen(true);
   };
 
@@ -418,6 +421,7 @@ const GastosTab = () => {
     setFormPago(Boolean(g.pago));
     setFormObs(g.observacao || "");
     setFormFixa(Boolean(g.fixa));
+    setShowObsField(Boolean(g.observacao && g.observacao.trim()));
     setModalOpen(true);
   };
 
@@ -556,6 +560,7 @@ const GastosTab = () => {
       }
 
       setModalOpen(false);
+      notifyCaixaUpdated();
       await loadGastos();
     } catch (err: any) {
       console.error(err);
@@ -584,6 +589,7 @@ const GastosTab = () => {
         item.id === g.id ? { ...item, pago: novoPago, data_pagamento: novaDataPag } : item
       )
     );
+    notifyCaixaUpdated();
     toast.success(
       novoPago ? "Pago! Valor já contabilizado no Caixa." : "Marcado como A Pagar."
     );
@@ -597,7 +603,7 @@ const GastosTab = () => {
         ? `Deseja excluir "${g.descricao}" (${formatCurrency(Number(g.valor))})? Essa ação também remove o impacto no Caixa.`
         : `Tem certeza que deseja excluir "${g.descricao}" (${formatCurrency(Number(g.valor))})?`,
       variant: "destructive",
-      confirmLabel: "Remover este",
+      confirmText: "Remover este",
       onConfirm: async () => {
         if (isSupabaseConfigured) {
           const { error } = await (supabase.from as any)("despesas").delete().eq("id", g.id);
@@ -607,6 +613,7 @@ const GastosTab = () => {
           }
         }
         setRegistros((prev) => prev.filter((item) => item.id !== g.id));
+        notifyCaixaUpdated();
         toast.success("Gasto removido");
       },
     });
@@ -617,7 +624,7 @@ const GastosTab = () => {
       title: "Excluir toda a recorrência?",
       description: "Isso removerá todas as parcelas mensais vinculadas a esta conta.",
       variant: "destructive",
-      confirmLabel: "Excluir todas",
+      confirmText: "Excluir todas",
       onConfirm: async () => {
         if (isSupabaseConfigured) {
           const { error } = await (supabase.from as any)("despesas")
@@ -629,6 +636,7 @@ const GastosTab = () => {
           }
         }
         setRegistros((prev) => prev.filter((item) => item.recorrencia_id !== recorrenciaId));
+        notifyCaixaUpdated();
         toast.success("Parcelas removidas");
       },
     });
@@ -1283,61 +1291,61 @@ const GastosTab = () => {
 
       {/* Modal Criar / Editar Gasto */}
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-        <DialogContent className="sm:max-w-[420px] w-[calc(100vw-1.5rem)] rounded-3xl bg-charcoal border-primary-foreground/[0.12] p-0 overflow-hidden shadow-2xl">
-          <DialogHeader className="px-5 pt-5 pb-3 border-b border-primary-foreground/[0.08]">
-            <DialogTitle className="font-heading text-[17px] font-semibold text-primary-foreground">
+        <DialogContent className="sm:max-w-[400px] w-[calc(100vw-1.5rem)] max-h-[88dvh] flex flex-col gap-0 rounded-3xl bg-charcoal border-primary-foreground/[0.12] p-0 overflow-hidden shadow-2xl">
+          <DialogHeader className="shrink-0 px-4 pt-4 pb-2.5 border-b border-primary-foreground/[0.08] text-left">
+            <DialogTitle className="font-heading text-[16px] font-semibold text-primary-foreground">
               {editingItem ? "Editar Gasto" : "Novo Gasto"}
             </DialogTitle>
           </DialogHeader>
 
-          <div className="px-5 py-4 space-y-4 max-h-[75vh] overflow-y-auto custom-scrollbar">
+          <div className="flex-1 min-h-0 px-4 py-3 space-y-2.5 overflow-y-auto scrollbar-hide">
             {/* 1. Pessoal ou Estúdio */}
-            <div className="space-y-1.5">
-              <label className="font-body text-[10px] uppercase tracking-wider text-primary-foreground/65 font-semibold block">
+            <div className="space-y-1">
+              <label className="font-body text-[10px] uppercase tracking-wider text-primary-foreground/60 font-semibold block">
                 Esse gasto é:
               </label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-1.5">
                 <button
                   type="button"
                   onClick={() => handleTipoChange("estudio")}
-                  className={`p-3 rounded-2xl border text-left transition-all ${
+                  className={`py-2 px-2.5 rounded-xl border text-left transition-all ${
                     formTipo === "estudio"
-                      ? "bg-amber-500/15 border-amber-400/50 text-amber-200 shadow-[0_0_20px_-8px_rgba(245,158,11,0.5)]"
+                      ? "bg-amber-500/15 border-amber-400/50 text-amber-200 shadow-[0_0_16px_-8px_rgba(245,158,11,0.45)]"
                       : "bg-primary-foreground/[0.03] border-primary-foreground/[0.08] text-primary-foreground/65 hover:text-primary-foreground"
                   }`}
                 >
-                  <div className="flex items-center gap-2 font-body text-[13px] font-semibold">
-                    <Building2 className="w-4 h-4 text-amber-400" />
-                    Do Estúdio
+                  <div className="flex items-center gap-1.5 font-body text-[12.5px] font-semibold leading-none">
+                    <Building2 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span>Do Estúdio</span>
                   </div>
-                  <p className="font-body text-[10px] opacity-75 mt-1 leading-tight">
-                    Abate do Caixa e do lucro do estúdio
+                  <p className="font-body text-[10px] opacity-75 mt-1 leading-none truncate">
+                    Abate lucro do estúdio
                   </p>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => handleTipoChange("pessoal")}
-                  className={`p-3 rounded-2xl border text-left transition-all ${
+                  className={`py-2 px-2.5 rounded-xl border text-left transition-all ${
                     formTipo === "pessoal"
-                      ? "bg-pink-500/15 border-pink-400/50 text-pink-200 shadow-[0_0_20px_-8px_rgba(236,72,153,0.5)]"
+                      ? "bg-pink-500/15 border-pink-400/50 text-pink-200 shadow-[0_0_16px_-8px_rgba(236,72,153,0.45)]"
                       : "bg-primary-foreground/[0.03] border-primary-foreground/[0.08] text-primary-foreground/65 hover:text-primary-foreground"
                   }`}
                 >
-                  <div className="flex items-center gap-2 font-body text-[13px] font-semibold">
-                    <User className="w-4 h-4 text-pink-400" />
-                    Pessoal
+                  <div className="flex items-center gap-1.5 font-body text-[12.5px] font-semibold leading-none">
+                    <User className="w-3.5 h-3.5 text-pink-400 shrink-0" />
+                    <span>Pessoal</span>
                   </div>
-                  <p className="font-body text-[10px] opacity-75 mt-1 leading-tight">
-                    Registra no Caixa como gasto pessoal
+                  <p className="font-body text-[10px] opacity-75 mt-1 leading-none truncate">
+                    Sai apenas no Caixa
                   </p>
                 </button>
               </div>
             </div>
 
-            {/* 2. Nome do gasto + atalhos */}
-            <div className="space-y-1.5">
-              <label className="font-body text-[10px] uppercase tracking-wider text-primary-foreground/65 font-semibold block">
+            {/* 2. Nome do gasto + atalhos em linha única deslizável */}
+            <div className="space-y-1">
+              <label className="font-body text-[10px] uppercase tracking-wider text-primary-foreground/60 font-semibold block">
                 Nome do gasto *
               </label>
               <input
@@ -1346,20 +1354,20 @@ const GastosTab = () => {
                 onChange={(e) => setFormNome(e.target.value)}
                 placeholder={
                   formTipo === "estudio"
-                    ? "Ex: Agulhas, Tintas, Aluguel, Conta de Luz..."
+                    ? "Ex: Agulhas, Tintas, Aluguel, Luz..."
                     : "Ex: Mercado, Almoço, Gasolina..."
                 }
                 autoFocus
-                className="w-full px-3.5 py-2.5 rounded-xl bg-primary-foreground/[0.05] border border-primary-foreground/[0.1] text-primary-foreground font-body text-[13.5px] placeholder:text-primary-foreground/30 focus:outline-none focus:border-gold/50"
+                className="w-full px-3 py-2 rounded-xl bg-primary-foreground/[0.05] border border-primary-foreground/[0.1] text-primary-foreground font-body text-[13px] placeholder:text-primary-foreground/35 focus:outline-none focus:border-gold/50"
               />
               {!editingItem && (
-                <div className="flex flex-wrap gap-1 pt-0.5">
+                <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide pt-0.5">
                   {atalhosDoForm.map((atalho) => (
                     <button
                       key={atalho}
                       type="button"
                       onClick={() => setFormNome(atalho)}
-                      className="px-2 py-0.5 rounded-full bg-primary-foreground/[0.04] hover:bg-gold/15 border border-primary-foreground/[0.08] text-[10px] font-body text-primary-foreground/65 hover:text-gold transition-all"
+                      className="px-2 py-0.5 rounded-full bg-primary-foreground/[0.04] hover:bg-gold/15 border border-primary-foreground/[0.08] text-[10.5px] font-body text-primary-foreground/70 hover:text-gold whitespace-nowrap shrink-0 transition-all"
                     >
                       + {atalho}
                     </button>
@@ -1369,13 +1377,13 @@ const GastosTab = () => {
             </div>
 
             {/* 3. Valor e Data */}
-            <div className="grid grid-cols-2 gap-2.5">
-              <div className="space-y-1.5">
-                <label className="font-body text-[10px] uppercase tracking-wider text-primary-foreground/65 font-semibold block">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="font-body text-[10px] uppercase tracking-wider text-primary-foreground/60 font-semibold block">
                   Valor (R$) *
                 </label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 font-heading text-[13px] text-primary-foreground/50">
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 font-heading text-[12.5px] text-primary-foreground/50">
                     R$
                   </span>
                   <input
@@ -1384,33 +1392,33 @@ const GastosTab = () => {
                     value={formValor}
                     onChange={(e) => setFormValor(formatCurrencyMask(e.target.value))}
                     placeholder="0,00"
-                    className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-primary-foreground/[0.05] border border-primary-foreground/[0.1] text-primary-foreground font-heading text-[15px] font-bold tabular-nums focus:outline-none focus:border-gold/50"
+                    className="w-full pl-8 pr-2.5 py-2 rounded-xl bg-primary-foreground/[0.05] border border-primary-foreground/[0.1] text-primary-foreground font-heading text-[14.5px] font-bold tabular-nums focus:outline-none focus:border-gold/50"
                   />
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <label className="font-body text-[10px] uppercase tracking-wider text-primary-foreground/65 font-semibold block">
+              <div className="space-y-1">
+                <label className="font-body text-[10px] uppercase tracking-wider text-primary-foreground/60 font-semibold block">
                   Data *
                 </label>
                 <input
                   type="date"
                   value={formData}
                   onChange={(e) => setFormData(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-primary-foreground/[0.05] border border-primary-foreground/[0.1] text-primary-foreground font-body text-[13px] [color-scheme:dark] focus:outline-none focus:border-gold/50"
+                  className="w-full px-2.5 py-2 rounded-xl bg-primary-foreground/[0.05] border border-primary-foreground/[0.1] text-primary-foreground font-body text-[12.5px] [color-scheme:dark] focus:outline-none focus:border-gold/50"
                 />
               </div>
             </div>
 
             {/* 4. Categoria */}
-            <div className="space-y-1.5">
-              <label className="font-body text-[10px] uppercase tracking-wider text-primary-foreground/65 font-semibold block">
+            <div className="space-y-1">
+              <label className="font-body text-[10px] uppercase tracking-wider text-primary-foreground/60 font-semibold block">
                 Categoria
               </label>
               <select
                 value={formCategoria}
                 onChange={(e) => setFormCategoria(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-xl bg-primary-foreground/[0.05] border border-primary-foreground/[0.1] text-primary-foreground font-body text-[13px] focus:outline-none focus:border-gold/50 [&>option]:bg-charcoal"
+                className="w-full px-3 py-2 rounded-xl bg-primary-foreground/[0.05] border border-primary-foreground/[0.1] text-primary-foreground font-body text-[12.5px] focus:outline-none focus:border-gold/50 [&>option]:bg-charcoal"
               >
                 {categoriasDoForm.map((c) => (
                   <option key={c} value={c}>
@@ -1425,116 +1433,127 @@ const GastosTab = () => {
                   value={formCatCustom}
                   onChange={(e) => setFormCatCustom(e.target.value)}
                   placeholder="Digite o nome da categoria"
-                  className="w-full mt-1.5 px-3 py-2 rounded-xl bg-primary-foreground/[0.05] border border-gold/30 text-primary-foreground font-body text-[13px] focus:outline-none"
+                  className="w-full mt-1 px-3 py-2 rounded-xl bg-primary-foreground/[0.05] border border-gold/30 text-primary-foreground font-body text-[12.5px] focus:outline-none"
                 />
               )}
             </div>
 
-            {/* 5. Status no Caixa */}
+            {/* 5. Situação + Conta fixa */}
             <div className="space-y-2">
-              <label className="font-body text-[10px] uppercase tracking-wider text-primary-foreground/65 font-semibold block">
+              <label className="font-body text-[10px] uppercase tracking-wider text-primary-foreground/60 font-semibold block">
                 Situação do pagamento
               </label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-1.5">
                 <button
                   type="button"
                   onClick={() => setFormPago(true)}
-                  className={`py-2.5 px-3 rounded-xl border font-body text-[12px] font-semibold flex items-center justify-center gap-1.5 transition-all ${
+                  className={`py-2 px-2.5 rounded-xl border font-body text-[12px] font-semibold flex items-center justify-center gap-1.5 transition-all ${
                     formPago
                       ? "bg-green-500/15 border-green-500/40 text-green-300"
                       : "bg-primary-foreground/[0.03] border-primary-foreground/[0.08] text-primary-foreground/60"
                   }`}
                 >
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Já foi pago
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" /> Já foi pago
                 </button>
                 <button
                   type="button"
                   onClick={() => setFormPago(false)}
-                  className={`py-2.5 px-3 rounded-xl border font-body text-[12px] font-semibold flex items-center justify-center gap-1.5 transition-all ${
+                  className={`py-2 px-2.5 rounded-xl border font-body text-[12px] font-semibold flex items-center justify-center gap-1.5 transition-all ${
                     !formPago
                       ? "bg-orange-500/15 border-orange-500/40 text-orange-300"
                       : "bg-primary-foreground/[0.03] border-primary-foreground/[0.08] text-primary-foreground/60"
                   }`}
                 >
-                  <Clock className="w-3.5 h-3.5" /> Pagar depois
+                  <Clock className="w-3.5 h-3.5 shrink-0" /> Pagar depois
                 </button>
               </div>
-              <p className="font-body text-[10px] text-primary-foreground/50">
-                {formPago
-                  ? "Ao salvar, esse gasto já entra imediatamente no fechamento do Caixa."
-                  : "Fica listado em Contas em aberto até você clicar em Pagar."}
-              </p>
 
-              {/* Opção de recorrência mensal automática */}
               {!editingItem && (
-                <div className="pt-1 space-y-1.5 rounded-xl border border-primary-foreground/[0.08] bg-primary-foreground/[0.02] p-3">
-                  <label className="flex items-center justify-between cursor-pointer">
+                <div className="rounded-xl border border-primary-foreground/[0.08] bg-primary-foreground/[0.025] px-3 py-2 space-y-1">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={formFixa}
+                    onClick={() => setFormFixa((v) => !v)}
+                    className="w-full flex items-center justify-between gap-2 text-left"
+                  >
                     <span className="font-body text-[12px] text-primary-foreground/85 flex items-center gap-1.5">
-                      <Repeat className="w-3.5 h-3.5 text-gold" /> Conta fixa (repetir todo mês)
+                      <Repeat className="w-3.5 h-3.5 text-gold shrink-0" /> Conta fixa todo mês
                     </span>
-                    <input
-                      type="checkbox"
-                      checked={formFixa}
-                      onChange={(e) => setFormFixa(e.target.checked)}
-                      className="accent-gold w-4 h-4 cursor-pointer"
-                    />
-                  </label>
+                    <span
+                      className={`w-9 h-5 rounded-full p-0.5 transition-colors flex items-center shrink-0 ${
+                        formFixa ? "bg-gold justify-end" : "bg-primary-foreground/15 justify-start"
+                      }`}
+                    >
+                      <span className="w-4 h-4 rounded-full bg-charcoal shadow-sm" />
+                    </span>
+                  </button>
                   {formFixa && (
-                    <p className="font-body text-[10.5px] text-gold/80">
+                    <p className="font-body text-[10px] text-gold/80 leading-snug">
                       {formPago
-                        ? "Este mês já entra como pago e os próximos meses ficam agendados automaticamente na mesma data."
-                        : "Lança automaticamente todo mês na mesma data, sem precisar informar quantidade de meses."}
+                        ? "Pago este mês e agendado automaticamente para os próximos 11 meses."
+                        : "Agendado automaticamente para os próximos 12 meses."}
                     </p>
                   )}
                 </div>
               )}
             </div>
 
-            {/* 6. Observação opcional */}
-            <div className="space-y-1.5">
-              <label className="font-body text-[10px] uppercase tracking-wider text-primary-foreground/65 font-semibold block">
-                Observação <span className="normal-case font-normal text-primary-foreground/40">(opcional)</span>
-              </label>
-              <input
-                type="text"
-                value={formObs}
-                onChange={(e) => setFormObs(e.target.value)}
-                placeholder="Ex: Pago no PIX, fornecedor..."
-                className="w-full px-3.5 py-2 rounded-xl bg-primary-foreground/[0.04] border border-primary-foreground/[0.08] text-primary-foreground font-body text-[12.5px] placeholder:text-primary-foreground/30 focus:outline-none focus:border-gold/40"
-              />
-            </div>
+            {/* 6. Observação opcional (expansível sob demanda para economizar espaço no mobile) */}
+            {showObsField || formObs.trim() ? (
+              <div className="space-y-1">
+                <label className="font-body text-[10px] uppercase tracking-wider text-primary-foreground/60 font-semibold block">
+                  Observação <span className="normal-case font-normal text-primary-foreground/40">(opcional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={formObs}
+                  onChange={(e) => setFormObs(e.target.value)}
+                  placeholder="Ex: Pago no PIX, fornecedor..."
+                  className="w-full px-3 py-2 rounded-xl bg-primary-foreground/[0.04] border border-primary-foreground/[0.08] text-primary-foreground font-body text-[12.5px] placeholder:text-primary-foreground/30 focus:outline-none focus:border-gold/40"
+                />
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowObsField(true)}
+                className="font-body text-[11px] font-medium text-primary-foreground/55 hover:text-gold transition-colors py-0.5"
+              >
+                + Adicionar observação (opcional)
+              </button>
+            )}
+          </div>
 
-            {/* Botões de ação */}
-            <div className="flex items-center gap-2 pt-2">
-              {editingItem?.recorrencia_id && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setModalOpen(false);
-                    handleDeleteSerie(editingItem.recorrencia_id!);
-                  }}
-                  className="px-3 py-2.5 rounded-xl bg-rose/10 border border-rose/25 text-rose font-body text-[11px] font-semibold hover:bg-rose/20 transition-all"
-                >
-                  Excluir série
-                </button>
-              )}
+          {/* Rodapé fixo e compacto */}
+          <div className="shrink-0 px-4 py-3 border-t border-primary-foreground/[0.08] bg-charcoal flex items-center gap-2">
+            {editingItem?.recorrencia_id && (
               <button
                 type="button"
-                onClick={() => setModalOpen(false)}
-                className="flex-1 py-2.5 rounded-xl bg-primary-foreground/[0.05] text-primary-foreground/70 font-body text-[12.5px] font-medium hover:bg-primary-foreground/[0.1] transition-all"
+                onClick={() => {
+                  setModalOpen(false);
+                  handleDeleteSerie(editingItem.recorrencia_id!);
+                }}
+                className="px-3 py-2.5 rounded-xl bg-rose/10 border border-rose/25 text-rose font-body text-[11px] font-semibold hover:bg-rose/20 transition-all"
               >
-                Cancelar
+                Excluir série
               </button>
-              <button
-                type="button"
-                disabled={saving}
-                onClick={handleSave}
-                className="flex-[1.4] py-2.5 rounded-xl bg-gradient-to-br from-gold to-nude text-charcoal font-body text-[13px] font-bold flex items-center justify-center gap-1.5 hover:brightness-105 transition-all disabled:opacity-50"
-              >
-                <Save className="w-4 h-4" />
-                {saving ? "Salvando..." : editingItem ? "Salvar Alterações" : "Registrar Gasto"}
-              </button>
-            </div>
+            )}
+            <button
+              type="button"
+              onClick={() => setModalOpen(false)}
+              className="flex-1 py-2.5 rounded-xl bg-primary-foreground/[0.05] text-primary-foreground/75 font-body text-[12.5px] font-medium hover:bg-primary-foreground/[0.1] transition-all"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={handleSave}
+              className="flex-[1.5] py-2.5 rounded-xl bg-gradient-to-br from-gold to-nude text-charcoal font-body text-[13px] font-bold flex items-center justify-center gap-1.5 hover:brightness-105 transition-all disabled:opacity-50"
+            >
+              <Save className="w-4 h-4" />
+              {saving ? "Salvando..." : editingItem ? "Salvar Alterações" : "Registrar Gasto"}
+            </button>
           </div>
         </DialogContent>
       </Dialog>
