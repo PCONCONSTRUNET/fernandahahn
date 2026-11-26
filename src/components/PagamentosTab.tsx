@@ -3,12 +3,13 @@ import { supabase, isSupabaseConfigured } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
   Search, CreditCard, Barcode, Clock, CheckCircle, XCircle,
-  ChevronDown, AlertCircle, Trash2, Wallet,
-  Edit3, DollarSign, Zap, ListChecks, X, Users,
+  ChevronDown, AlertCircle, Trash2, Wallet, ArrowUpRight,
+  Edit3, DollarSign, Zap, ListChecks, X, Users, ChevronRight,
 } from "lucide-react";
 import pixIcon from "@/assets/pix-icon.png";
 import { useConfirm } from "@/contexts/ConfirmContext";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LoadMoreButton } from "@/components/ui/load-more-button";
 import { getPaymentDate } from "@/lib/utils";
 import {
@@ -18,6 +19,7 @@ import {
   recordLocalCaixaMovimentacao,
   toLocalDateISO,
   notifyCaixaUpdated,
+  CAIXA_UPDATED_EVENT,
 } from "@/lib/caixa";
 
 interface Agendamento {
@@ -65,8 +67,19 @@ const parseCurrencyInput = (s: string): number => {
   return parseFloat(clean) || 0;
 };
 
-type StatusFilter = "todos" | "pendente" | "pago" | "cancelado";
+type StatusFilter = "todos" | "pendente" | "pago" | "retiradas" | "cancelado";
 type SortField = "data" | "valor" | "cliente" | "status";
+
+interface RetiradaItem {
+  id: string;
+  descricao: string;
+  observacao?: string | null;
+  categoria?: string | null;
+  valor: number;
+  data_pagamento?: string | null;
+  data_vencimento: string;
+  tipo?: string | null;
+}
 type SortDir = "asc" | "desc";
 
 interface FaturaPendente {
@@ -270,6 +283,8 @@ const PagamentosTab = ({ agendamentos, getClientName, onUpdate, onEdit }: Props)
   };
 
   const [historico, setHistorico] = useState<any[]>([]);
+  const [retiradas, setRetiradas] = useState<RetiradaItem[]>([]);
+  const [selectedRetirada, setSelectedRetirada] = useState<RetiradaItem | null>(null);
 
   const [localAgendamentos, setLocalAgendamentos] = useState<any[]>(() => {
     const seen = new Set<string>();
@@ -289,13 +304,33 @@ const PagamentosTab = ({ agendamentos, getClientName, onUpdate, onEdit }: Props)
   }, [search]);
 
   useEffect(() => {
+    const onCaixaUpdate = () => setRefetchKey((k) => k + 1);
+    window.addEventListener(CAIXA_UPDATED_EVENT, onCaixaUpdate);
+    return () => window.removeEventListener(CAIXA_UPDATED_EVENT, onCaixaUpdate);
+  }, []);
+
+  useEffect(() => {
     let isCancelled = false;
+
+    const readLocalRetiradas = (): RetiradaItem[] => {
+      try {
+        const raw = localStorage.getItem("studio_caixa_retiradas_preview");
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed)
+          ? parsed.filter((d: any) => d.tipo === "comissao" && d.pago)
+          : [];
+      } catch {
+        return [];
+      }
+    };
 
     const fetchHistorico = async () => {
       if (!isSupabaseConfigured) {
         const localHist = getLocalPagamentoHistorico();
+        const localRet = readLocalRetiradas();
         if (!isCancelled) {
           setHistorico(localHist);
+          setRetiradas(localRet);
           if (refetchKey === 0) {
             const seen = new Set<string>();
             const deduped = (agendamentos || []).filter((a) => {
@@ -331,15 +366,24 @@ const PagamentosTab = ({ agendamentos, getClientName, onUpdate, onEdit }: Props)
         return true;
       });
 
-      const { data: histData } = await supabase
-        .from("pagamento_historico")
-        .select("id,agendamento_id,valor_delta,acao,observacao,created_at")
-        .order("created_at", { ascending: false })
-        .limit(500);
+      const [{ data: histData }, { data: retData }] = await Promise.all([
+        supabase
+          .from("pagamento_historico")
+          .select("id,agendamento_id,valor_delta,acao,observacao,created_at")
+          .order("created_at", { ascending: false })
+          .limit(500),
+        (supabase.from as any)("despesas")
+          .select("id,descricao,observacao,categoria,valor,data_pagamento,data_vencimento,tipo")
+          .eq("tipo", "comissao")
+          .eq("pago", true)
+          .order("data_pagamento", { ascending: false })
+          .limit(200),
+      ]);
 
       if (isCancelled) return;
 
       setHistorico(histData || []);
+      setRetiradas((retData as RetiradaItem[]) || []);
       setLocalAgendamentos(currentAgendamentos);
     };
 
@@ -446,12 +490,34 @@ const PagamentosTab = ({ agendamentos, getClientName, onUpdate, onEdit }: Props)
     return list;
   }, [faturas, dateFilteredFaturas, debouncedSearch, statusFilter, search, sortField, sortDir, getClientName]);
 
+  const retiradasFiltradas = useMemo(() => {
+    let list = [...retiradas];
+    if (dateFilter) {
+      list = list.filter((r) => (r.data_pagamento || r.data_vencimento) === dateFilter);
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(
+        (r) =>
+          (r.descricao || "").toLowerCase().includes(q) ||
+          (r.observacao || "").toLowerCase().includes(q) ||
+          (r.categoria || "").toLowerCase().includes(q)
+      );
+    }
+    return list.sort((a, b) =>
+      (b.data_pagamento || b.data_vencimento || "").localeCompare(
+        a.data_pagamento || a.data_vencimento || ""
+      )
+    );
+  }, [retiradas, dateFilter, search]);
+
   const counts = useMemo(() => ({
-    todos: dateFilteredFaturas.length,
+    todos: dateFilteredFaturas.length + retiradasFiltradas.length,
     pendente: faturas.filter((a) => a.fatura_tipo === "pendente" && !["cancelado", "falta"].includes(a.status)).length,
     pago: dateFilteredFaturas.filter((a) => a.fatura_tipo === "pagamento").length,
+    retiradas: retiradasFiltradas.length,
     cancelado: dateFilteredFaturas.filter((a) => ["cancelado", "falta"].includes(a.status)).length,
-  }), [dateFilteredFaturas, faturas]);
+  }), [dateFilteredFaturas, faturas, retiradasFiltradas.length]);
 
   const { totalPago, totalPendente, clientesComPendencia } = useMemo(() => {
     let pago = 0;
@@ -694,7 +760,7 @@ const PagamentosTab = ({ agendamentos, getClientName, onUpdate, onEdit }: Props)
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <p className="font-body text-[14px] font-medium text-primary-foreground truncate">
+              <p className="font-body text-[14px] font-medium text-primary-foreground break-words leading-snug">
                 {getClientName(ag.user_id, ag.cliente_nome)}
               </p>
               {isPendingAmount && (
@@ -713,7 +779,7 @@ const PagamentosTab = ({ agendamentos, getClientName, onUpdate, onEdit }: Props)
                 </span>
               )}
             </div>
-            <p className="font-body text-[11px] text-primary-foreground/75 truncate">
+            <p className="font-body text-[11px] text-primary-foreground/75 break-words leading-snug mt-0.5">
               {ag.servico}{ag.variacao ? ` · ${ag.variacao}` : ""} · {formatDate(ag.data_fatura)}
             </p>
           </div>
@@ -1011,13 +1077,14 @@ const PagamentosTab = ({ agendamentos, getClientName, onUpdate, onEdit }: Props)
           </select>
         </div>
 
-        {/* Linha 3: Status filters centralizados em grade 2x2 no mobile / 4 colunas no desktop */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-          {(["todos", "pendente", "pago", "cancelado"] as StatusFilter[]).map((s) => {
+        {/* Linha 3: Status filters */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
+          {(["todos", "pendente", "pago", "retiradas", "cancelado"] as StatusFilter[]).map((s) => {
             const labels: Record<StatusFilter, string> = {
               todos: "Todos",
               pendente: "A Receber",
               pago: "Pagos",
+              retiradas: "Retiradas",
               cancelado: "Cancelados",
             };
             const colors: Record<StatusFilter, { active: string; inactive: string }> = {
@@ -1033,6 +1100,10 @@ const PagamentosTab = ({ agendamentos, getClientName, onUpdate, onEdit }: Props)
                 active: "bg-emerald-500/15 text-emerald-300 border-emerald-500/45",
                 inactive: "bg-primary-foreground/[0.03] text-primary-foreground/65 border-primary-foreground/[0.08] hover:text-emerald-300",
               },
+              retiradas: {
+                active: "bg-rose/15 text-rose border-rose/45",
+                inactive: "bg-primary-foreground/[0.03] text-primary-foreground/65 border-primary-foreground/[0.08] hover:text-rose",
+              },
               cancelado: {
                 active: "bg-rose/15 text-rose border-rose/45",
                 inactive: "bg-primary-foreground/[0.03] text-primary-foreground/65 border-primary-foreground/[0.08] hover:text-rose",
@@ -1045,10 +1116,10 @@ const PagamentosTab = ({ agendamentos, getClientName, onUpdate, onEdit }: Props)
                 type="button"
                 onClick={() => setStatusFilter(s)}
                 className={`rounded-xl px-2.5 py-2 font-body text-[11px] font-semibold border transition-all flex items-center justify-center gap-1 ${
-                  statusFilter === s ? c.active : c.inactive
-                }`}
+                  s === "cancelado" ? "col-span-2 sm:col-span-1" : ""
+                } ${statusFilter === s ? c.active : c.inactive}`}
               >
-                <span className="truncate">{labels[s]}</span>
+                <span>{labels[s]}</span>
                 <span className="opacity-75 tabular-nums shrink-0">({counts[s]})</span>
               </button>
             );
@@ -1058,9 +1129,12 @@ const PagamentosTab = ({ agendamentos, getClientName, onUpdate, onEdit }: Props)
 
       {/* ── PAYMENT LIST (agrupado por cliente, com pendências no topo) ─────── */}
       <div className="space-y-2">
-        {groupedFaturas.groups.length === 0 && <EmptyState />}
+        {((statusFilter === "retiradas" && retiradasFiltradas.length === 0) ||
+          (statusFilter !== "retiradas" &&
+            groupedFaturas.groups.length === 0 &&
+            (statusFilter !== "todos" || retiradasFiltradas.length === 0))) && <EmptyState />}
 
-        {groupedFaturas.groups.slice(0, visibleCount).map(group => {
+        {statusFilter !== "retiradas" && groupedFaturas.groups.slice(0, visibleCount).map(group => {
           const isExpandedGroup = !!debouncedSearch.trim() || expandedGroups.has(group.key);
           return (
             <div key={group.key} className="space-y-1.5">
@@ -1139,14 +1213,146 @@ const PagamentosTab = ({ agendamentos, getClientName, onUpdate, onEdit }: Props)
           );
         })}
 
-        <LoadMoreButton
-          visibleCount={visibleCount}
-          totalCount={groupedFaturas.groups.length}
-          step={15}
-          onLoadMore={() => setVisibleCount((c) => c + 15)}
-          itemLabel="clientes"
-        />
+        {statusFilter !== "retiradas" && (
+          <LoadMoreButton
+            visibleCount={visibleCount}
+            totalCount={groupedFaturas.groups.length}
+            step={15}
+            onLoadMore={() => setVisibleCount((c) => c + 15)}
+            itemLabel="clientes"
+          />
+        )}
+
+        {/* Retiradas de comissão registradas pelo Caixa */}
+        {(statusFilter === "todos" || statusFilter === "retiradas") && retiradasFiltradas.length > 0 && (
+          <div className="space-y-2 pt-2">
+            <p className="font-body text-[11px] font-semibold uppercase tracking-wider text-rose/85 px-1">
+              Retiradas de Comissão ({retiradasFiltradas.length})
+            </p>
+            {retiradasFiltradas.map((r) => {
+              const dt = r.data_pagamento || r.data_vencimento;
+              return (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => setSelectedRetirada(r)}
+                  className="w-full text-left flex items-center justify-between gap-2.5 p-3.5 rounded-2xl border border-rose/25 bg-rose/[0.06] hover:border-rose/45 transition-all"
+                >
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div className="w-9 h-9 rounded-xl bg-rose/15 border border-rose/30 flex items-center justify-center shrink-0">
+                      <ArrowUpRight className="w-4 h-4 text-rose" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-body text-[13.5px] font-semibold text-primary-foreground break-words leading-snug">
+                        {r.descricao || "Retirada de Comissão"}
+                      </p>
+                      <p className="font-body text-[11px] text-primary-foreground/65 mt-0.5">
+                        {formatDate(dt)} · {r.categoria || "Comissão"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0 text-right">
+                    <div>
+                      <p className="font-heading text-[14px] font-bold text-rose tabular-nums">
+                        - {formatCurrency(r.valor)}
+                      </p>
+                      <p className="font-body text-[9.5px] text-rose/80 font-semibold uppercase">
+                        Saída (Comissão)
+                      </p>
+                    </div>
+                    <ChevronRight className="w-3.5 h-3.5 text-primary-foreground/40" />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
+
+      {/* Modal de detalhes completos da Retirada de Comissão */}
+      <Dialog open={!!selectedRetirada} onOpenChange={(o) => !o && setSelectedRetirada(null)}>
+        <DialogContent className="bg-charcoal border border-primary-foreground/[0.12] text-primary-foreground max-w-md rounded-3xl p-5">
+          {selectedRetirada && (() => {
+            const dt = selectedRetirada.data_pagamento || selectedRetirada.data_vencimento;
+            const dataExtenso = dt
+              ? new Date(dt + "T12:00:00").toLocaleDateString("pt-BR", {
+                  weekday: "long",
+                  day: "2-digit",
+                  month: "long",
+                  year: "numeric",
+                })
+              : "—";
+            return (
+              <div className="space-y-4">
+                <DialogHeader>
+                  <DialogTitle className="font-heading text-lg font-semibold text-primary-foreground flex items-center gap-2.5">
+                    <span className="w-8 h-8 rounded-xl bg-rose/15 text-rose flex items-center justify-center shrink-0">
+                      <ArrowUpRight className="w-4 h-4" />
+                    </span>
+                    <span className="break-words text-left">
+                      {selectedRetirada.descricao || "Retirada de Comissão"}
+                    </span>
+                  </DialogTitle>
+                </DialogHeader>
+
+                <div className="rounded-2xl border border-rose/25 bg-rose/[0.08] p-4 text-center">
+                  <p className="font-body text-[10.5px] uppercase tracking-wider text-primary-foreground/65 font-semibold">
+                    Saída (Comissão)
+                  </p>
+                  <p className="font-heading text-3xl font-bold text-rose tabular-nums mt-1">
+                    - {formatCurrency(selectedRetirada.valor)}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 rounded-2xl border border-primary-foreground/[0.08] bg-primary-foreground/[0.025] p-3.5 text-left">
+                  <div className="col-span-2">
+                    <p className="font-body text-[10px] uppercase tracking-wider text-primary-foreground/50">
+                      Data da retirada
+                    </p>
+                    <p className="font-body text-[13px] font-medium text-primary-foreground capitalize mt-0.5">
+                      {dataExtenso}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="font-body text-[10px] uppercase tracking-wider text-primary-foreground/50">
+                      Categoria
+                    </p>
+                    <p className="font-body text-[12.5px] font-medium text-primary-foreground mt-0.5">
+                      {selectedRetirada.categoria || "Comissão"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="font-body text-[10px] uppercase tracking-wider text-primary-foreground/50">
+                      Origem
+                    </p>
+                    <p className="font-body text-[12.5px] font-medium text-primary-foreground mt-0.5">
+                      Retirada no Caixa
+                    </p>
+                  </div>
+                  {selectedRetirada.observacao && (
+                    <div className="col-span-2">
+                      <p className="font-body text-[10px] uppercase tracking-wider text-primary-foreground/50">
+                        Observação
+                      </p>
+                      <p className="font-body text-[12.5px] text-primary-foreground/85 break-words mt-0.5">
+                        {selectedRetirada.observacao}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedRetirada(null)}
+                  className="w-full py-2.5 rounded-xl bg-primary-foreground/[0.08] hover:bg-primary-foreground/[0.14] text-primary-foreground font-body text-[13px] font-semibold transition-all"
+                >
+                  Fechar
+                </button>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
 
       {/* ── SMART PAYMENT MODAL ───────────────────────────────────────────── */}
       {smartPayModal && (

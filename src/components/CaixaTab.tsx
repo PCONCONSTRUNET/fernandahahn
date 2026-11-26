@@ -60,6 +60,7 @@ import {
   classifyInstallmentMovement,
   getLocalCaixaMovimentacoes,
   CAIXA_UPDATED_EVENT,
+  notifyCaixaUpdated,
 } from "@/lib/caixa";
 
 interface Agendamento {
@@ -202,6 +203,7 @@ const CaixaTab = ({ agendamentos, getClientName, onUpdate }: Props) => {
   const [tempSaldo, setTempSaldo] = useState("");
   const [savingSaldo, setSavingSaldo] = useState(false);
   const [showPaymentMethodModal, setShowPaymentMethodModal] = useState(false);
+  const [selectedExtratoItem, setSelectedExtratoItem] = useState<any | null>(null);
 
   const [despesas, setDespesas] = useState<DespesaRow[]>([]);
   const [movimentacoes, setMovimentacoes] = useState<CaixaMovimentacao[]>([]);
@@ -655,14 +657,23 @@ const CaixaTab = ({ agendamentos, getClientName, onUpdate }: Props) => {
         const dt = getExpDate(d);
         const escopo =
           d.tipo === "comissao" ? "Comissão" : d.tipo === "pessoal" ? "Pessoal" : "Estúdio";
+        const cat = (d.categoria || "").trim();
+        const subtituloGasto =
+          cat && cat.toLowerCase() !== escopo.toLowerCase()
+            ? `${cat} · ${escopo}`
+            : escopo;
         return {
           id: d.id || `gasto-${idx}`,
           _movimentoId: `gasto-${d.id || idx}-${dt}`,
           _is_gasto: true as const,
           _gasto_escopo: escopo,
+          _gasto_tipo: d.tipo || "estudio",
+          _gasto_categoria: cat || escopo,
+          _gasto_observacao: d.observacao || "",
+          _gasto_vencimento: d.data_vencimento || dt,
           user_id: "admin",
-          cliente_nome: d.descricao || d.categoria || "Gasto",
-          servico: `${d.categoria || "Gasto"} · ${escopo}`,
+          cliente_nome: d.descricao || cat || "Gasto",
+          servico: subtituloGasto,
           data_fatura: dt,
           valor_pago: -Math.abs(Number(d.valor || 0)),
           forma_pagamento: "",
@@ -898,14 +909,14 @@ const CaixaTab = ({ agendamentos, getClientName, onUpdate }: Props) => {
         </div>
       </div>
 
-      {/* ═══════════ CARTÃO PRINCIPAL COMPACTO (100% MOBILE) ═══════════ */}
-      <section className="rounded-2xl border border-primary-foreground/[0.09] bg-[#1a1919] p-3.5 sm:p-4 space-y-3">
-        {/* Saldo + Ciclo */}
-        <div className="space-y-1.5">
+      {/* ═══════════ 1) SALDO EM CAIXA + CICLO + RESUMO 2x2 ═══════════ */}
+      <section className="space-y-3">
+        {/* Card do Saldo */}
+        <div className="rounded-2xl border border-primary-foreground/[0.09] bg-[#1a1919] p-4 space-y-2.5">
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5 min-w-0">
+            <div className="flex items-center gap-2">
               <Wallet className="w-4 h-4 text-gold shrink-0" />
-              <span className="font-body text-[12px] font-semibold text-primary-foreground/80 truncate">
+              <span className="font-body text-[13px] font-semibold text-primary-foreground/90 whitespace-nowrap">
                 Saldo em Caixa
               </span>
               {saldoFisicoManual !== null && (
@@ -915,13 +926,18 @@ const CaixaTab = ({ agendamentos, getClientName, onUpdate }: Props) => {
               )}
             </div>
 
-            <button
-              type="button"
-              onClick={openConfigModal}
-              className="font-body text-[10.5px] text-primary-foreground/55 hover:text-gold transition-colors truncate"
-            >
-              Fechamento: dia {diaFechamento} · {mesSelecionado.rangeLabel}
-            </button>
+            {!editingSaldo && (
+              <button
+                type="button"
+                onClick={() => {
+                  setTempSaldo(formatCurrencyValue(saldoFisicoManual ?? resumoMes.saldoCaixa));
+                  setEditingSaldo(true);
+                }}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary-foreground/[0.05] border border-primary-foreground/[0.09] text-primary-foreground/75 hover:text-gold hover:border-gold/30 font-body text-[11px] shrink-0 transition-all"
+              >
+                <Pencil className="w-3 h-3" /> Ajustar
+              </button>
+            )}
           </div>
 
           {editingSaldo ? (
@@ -959,37 +975,92 @@ const CaixaTab = ({ agendamentos, getClientName, onUpdate }: Props) => {
               </button>
             </div>
           ) : (
-            <div className="flex items-center justify-between gap-2">
-              <p
-                className={`font-heading text-[28px] sm:text-3xl font-bold tabular-nums leading-none tracking-tight ${
-                  saldoVisivel >= 0 ? "text-emerald-400" : "text-rose"
-                }`}
-              >
-                {formatCurrency(saldoVisivel)}
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  setTempSaldo(formatCurrencyValue(saldoFisicoManual ?? resumoMes.saldoCaixa));
-                  setEditingSaldo(true);
-                }}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary-foreground/[0.04] border border-primary-foreground/[0.08] text-primary-foreground/65 hover:text-gold hover:border-gold/30 font-body text-[10.5px] shrink-0 transition-all"
-              >
-                <Pencil className="w-3 h-3" /> Ajustar
-              </button>
-            </div>
+            <p
+              className={`font-heading text-[30px] sm:text-3xl font-bold tabular-nums leading-none tracking-tight ${
+                saldoVisivel >= 0 ? "text-emerald-400" : "text-rose"
+              }`}
+            >
+              {formatCurrency(saldoVisivel)}
+            </p>
           )}
+
+          <button
+            type="button"
+            onClick={openConfigModal}
+            className="block text-left font-body text-[11px] text-primary-foreground/60 hover:text-gold transition-colors leading-snug"
+          >
+            Fechamento: dia {diaFechamento} · Período {mesSelecionado.rangeLabel}
+          </button>
         </div>
 
-        {/* Faixa compacta de Comissão + Retirada */}
-        <div className="rounded-xl border border-gold/20 bg-gold/[0.05] px-3 py-2 flex items-center justify-between gap-2">
+        {/* 4 cartões limpos em grade 2x2 */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+          <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.06] p-3">
+            <p className="font-body text-[11px] font-medium text-emerald-300/90 flex items-center gap-1">
+              <ArrowDownLeft className="w-3.5 h-3.5 shrink-0" /> Entrou
+            </p>
+            <p className="font-heading text-[17px] sm:text-[18px] font-bold text-emerald-400 tabular-nums mt-1">
+              {formatCurrency(resumoMes.entrou)}
+            </p>
+            <p className="font-body text-[10.5px] text-primary-foreground/55 mt-0.5 leading-snug">
+              {resumoMes.qtdAtendimentos} {resumoMes.qtdAtendimentos === 1 ? "atendimento" : "atendimentos"}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-rose/25 bg-rose/[0.06] p-3">
+            <p className="font-body text-[11px] font-medium text-rose flex items-center gap-1">
+              <ArrowUpRight className="w-3.5 h-3.5 shrink-0" /> Saiu
+            </p>
+            <p className="font-heading text-[17px] sm:text-[18px] font-bold text-rose tabular-nums mt-1">
+              - {formatCurrency(resumoMes.totalGastos)}
+            </p>
+            <p className="font-body text-[10.5px] text-primary-foreground/55 mt-0.5 leading-snug">
+              Estúdio {formatCurrency(resumoMes.gastosEstudio)} · Pessoal {formatCurrency(resumoMes.gastosPessoais)}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-gold/25 bg-gold/[0.06] p-3">
+            <p className="font-body text-[11px] font-medium text-gold flex items-center gap-1">
+              <Clock className="w-3.5 h-3.5 shrink-0" /> A Receber
+            </p>
+            <p className="font-heading text-[17px] sm:text-[18px] font-bold text-gold tabular-nums mt-1">
+              {formatCurrency(resumoMes.faltaReceber)}
+            </p>
+            <p className="font-body text-[10.5px] text-primary-foreground/55 mt-0.5 leading-snug">
+              Em aberto / sinais
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-primary-foreground/[0.09] bg-[#1e1d1c] p-3">
+            <p className="font-body text-[11px] font-medium text-primary-foreground/85">
+              {comissaoPct > 0 ? "Lucro Líquido" : "Lucro do Estúdio"}
+            </p>
+            <p
+              className={`font-heading text-[17px] sm:text-[18px] font-bold tabular-nums mt-1 ${
+                (comissaoPct > 0 ? resumoMes.sobraAposComissao : resumoMes.sobraEstudio) >= 0
+                  ? "text-emerald-400"
+                  : "text-rose"
+              }`}
+            >
+              {formatCurrency(comissaoPct > 0 ? resumoMes.sobraAposComissao : resumoMes.sobraEstudio)}
+            </p>
+            <p className="font-body text-[10.5px] text-primary-foreground/55 mt-0.5 leading-snug">
+              {comissaoPct > 0
+                ? `Após ${comissaoPct}% de comissão`
+                : "Entrou − gastos estúdio"}
+            </p>
+          </div>
+        </div>
+
+        {/* Bloco simples de Comissão */}
+        <div className="rounded-2xl border border-gold/20 bg-gold/[0.05] px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2.5">
           <button
             type="button"
             onClick={openConfigModal}
             className="text-left min-w-0 flex-1"
           >
-            <p className="font-body text-[11px] text-gold font-semibold flex items-center gap-1 truncate">
-              <Sparkles className="w-3 h-3 shrink-0" />
+            <p className="font-body text-[12px] text-gold font-semibold flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 shrink-0" />
               <span>
                 Comissão ({comissaoPct}%):{" "}
                 <strong className="tabular-nums text-primary-foreground">
@@ -997,8 +1068,8 @@ const CaixaTab = ({ agendamentos, getClientName, onUpdate }: Props) => {
                 </strong>
               </span>
             </p>
-            <p className="font-body text-[10px] text-primary-foreground/55 truncate tabular-nums">
-              Retirado {formatCurrency(resumoMes.comissaoRetirada)} · Disp. {formatCurrency(resumoMes.comissaoDisponivel)}
+            <p className="font-body text-[10.5px] text-primary-foreground/60 tabular-nums mt-0.5">
+              Retirado {formatCurrency(resumoMes.comissaoRetirada)} · Disponível {formatCurrency(resumoMes.comissaoDisponivel)}
             </p>
           </button>
 
@@ -1012,119 +1083,60 @@ const CaixaTab = ({ agendamentos, getClientName, onUpdate }: Props) => {
               setRetiradaData(toLocalISO(new Date()));
               setRetiradaOpen(true);
             }}
-            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/35 text-emerald-300 hover:bg-emerald-500/25 font-body text-[11px] font-semibold whitespace-nowrap shrink-0 transition-all"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/35 text-emerald-300 hover:bg-emerald-500/25 font-body text-[11.5px] font-semibold whitespace-nowrap shrink-0 transition-all"
           >
-            <Banknote className="w-3 h-3" />
+            <Banknote className="w-3.5 h-3.5" />
             <span>Retirar Comissão</span>
           </button>
         </div>
 
-        {/* Formas de pagamento em 3 colunas compactas */}
+        {/* Formas de pagamento */}
         <button
           type="button"
           onClick={() => setShowPaymentMethodModal(true)}
-          className="w-full text-left rounded-xl border border-primary-foreground/[0.07] bg-primary-foreground/[0.025] hover:border-gold/30 p-2.5 transition-all"
+          className="w-full text-left rounded-2xl border border-primary-foreground/[0.08] bg-[#1a1919] hover:border-gold/30 p-3 transition-all"
         >
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="font-body text-[10.5px] font-medium text-primary-foreground/65">
-              Como as clientes pagaram
+          <div className="flex items-center justify-between mb-2">
+            <span className="font-body text-[11px] font-semibold text-primary-foreground/70">
+              Recebido por forma de pagamento
             </span>
-            <span className="font-body text-[10px] text-gold font-medium">Detalhes →</span>
+            <span className="font-body text-[10.5px] text-gold font-medium shrink-0">Detalhes →</span>
           </div>
           <div className="grid grid-cols-3 gap-2">
             <div>
-              <p className="font-body text-[10px] text-primary-foreground/50 flex items-center gap-1">
+              <p className="font-body text-[10.5px] text-primary-foreground/55 flex items-center gap-1">
                 <img src={pixIcon} alt="PIX" className="w-3 h-3" /> PIX
               </p>
-              <p className="font-heading text-[12.5px] font-bold text-emerald-400 tabular-nums mt-0.5 truncate">
+              <p className="font-heading text-[13px] font-bold text-emerald-400 tabular-nums mt-0.5">
                 {formatCurrency(paymentMethodStats.totals.pix)}
               </p>
             </div>
             <div>
-              <p className="font-body text-[10px] text-primary-foreground/50 flex items-center gap-1">
+              <p className="font-body text-[10.5px] text-primary-foreground/55 flex items-center gap-1">
                 <CreditCard className="w-3 h-3 text-sky-400" /> Cartão
               </p>
-              <p className="font-heading text-[12.5px] font-bold text-sky-400 tabular-nums mt-0.5 truncate">
+              <p className="font-heading text-[13px] font-bold text-sky-400 tabular-nums mt-0.5">
                 {formatCurrency(paymentMethodStats.totals.cartao)}
               </p>
             </div>
             <div>
-              <p className="font-body text-[10px] text-primary-foreground/50 flex items-center gap-1">
+              <p className="font-body text-[10.5px] text-primary-foreground/55 flex items-center gap-1">
                 <Banknote className="w-3 h-3 text-gold" /> Dinheiro
               </p>
-              <p className="font-heading text-[12.5px] font-bold text-gold tabular-nums mt-0.5 truncate">
+              <p className="font-heading text-[13px] font-bold text-gold tabular-nums mt-0.5">
                 {formatCurrency(paymentMethodStats.totals.dinheiro)}
               </p>
             </div>
           </div>
         </button>
-
-        {/* 4 cartões compactos 2x2 */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.06] p-2.5">
-            <p className="font-body text-[10.5px] font-medium text-emerald-300/90 flex items-center gap-1">
-              <ArrowDownLeft className="w-3 h-3" /> Entrou (Pago)
-            </p>
-            <p className="font-heading text-[16px] sm:text-[18px] font-bold text-emerald-400 tabular-nums mt-0.5">
-              {formatCurrency(resumoMes.entrou)}
-            </p>
-            <p className="font-body text-[10px] text-primary-foreground/50 truncate">
-              {resumoMes.qtdAtendimentos} {resumoMes.qtdAtendimentos === 1 ? "atendimento" : "atendimentos"}
-            </p>
-          </div>
-
-          <div className="rounded-xl border border-rose/25 bg-rose/[0.06] p-2.5">
-            <p className="font-body text-[10.5px] font-medium text-rose flex items-center gap-1">
-              <ArrowUpRight className="w-3 h-3" /> Saiu (Gastos)
-            </p>
-            <p className="font-heading text-[16px] sm:text-[18px] font-bold text-rose tabular-nums mt-0.5">
-              - {formatCurrency(resumoMes.totalGastos)}
-            </p>
-            <p className="font-body text-[10px] text-primary-foreground/50 truncate">
-              Est. {formatCurrency(resumoMes.gastosEstudio)} · Pess. {formatCurrency(resumoMes.gastosPessoais)}
-            </p>
-          </div>
-
-          <div className="rounded-xl border border-gold/25 bg-gold/[0.06] p-2.5">
-            <p className="font-body text-[10.5px] font-medium text-gold flex items-center gap-1">
-              <Clock className="w-3 h-3" /> Falta Receber
-            </p>
-            <p className="font-heading text-[16px] sm:text-[18px] font-bold text-gold tabular-nums mt-0.5">
-              {formatCurrency(resumoMes.faltaReceber)}
-            </p>
-            <p className="font-body text-[10px] text-primary-foreground/50 truncate">
-              Em aberto / sinais
-            </p>
-          </div>
-
-          <div className="rounded-xl border border-primary-foreground/[0.09] bg-[#252423] p-2.5">
-            <p className="font-body text-[10.5px] font-medium text-primary-foreground/80">
-              {comissaoPct > 0 ? "Lucro Líquido" : "Lucro do Estúdio"}
-            </p>
-            <p
-              className={`font-heading text-[16px] sm:text-[18px] font-bold tabular-nums mt-0.5 ${
-                (comissaoPct > 0 ? resumoMes.sobraAposComissao : resumoMes.sobraEstudio) >= 0
-                  ? "text-emerald-400"
-                  : "text-rose"
-              }`}
-            >
-              {formatCurrency(comissaoPct > 0 ? resumoMes.sobraAposComissao : resumoMes.sobraEstudio)}
-            </p>
-            <p className="font-body text-[10px] text-primary-foreground/50 truncate">
-              {comissaoPct > 0
-                ? `Após ${comissaoPct}% comissão`
-                : "Entrou − gastos estúdio"}
-            </p>
-          </div>
-        </div>
       </section>
 
-      {/* ═══════════ NAVEGAÇÃO INFERIOR ÚNICA: EXTRATO | DIA A DIA | GRÁFICOS ═══════════ */}
-      <div className="flex gap-1.5 p-1 rounded-2xl bg-primary-foreground/[0.04] border border-primary-foreground/[0.08]">
+      {/* ═══════════ NAVEGAÇÃO INFERIOR: EXTRATO | POR DIA | GRÁFICOS (SEM CORTES) ═══════════ */}
+      <div className="grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-primary-foreground/[0.04] border border-primary-foreground/[0.08]">
         {([
-          { id: "extrato" as const, label: "Extrato (Entradas e Saídas)", icon: Wallet },
-          { id: "dia" as const, label: "Resumo do Dia", icon: Calendar },
-          { id: "resumo" as const, label: "Gráfico e Serviços", icon: BarChart3 },
+          { id: "extrato" as const, label: "Extrato", icon: Wallet },
+          { id: "dia" as const, label: "Por Dia", icon: Calendar },
+          { id: "resumo" as const, label: "Gráficos", icon: BarChart3 },
         ]).map((tabItem) => {
           const Icon = tabItem.icon;
           const active = viewTab === tabItem.id;
@@ -1133,14 +1145,14 @@ const CaixaTab = ({ agendamentos, getClientName, onUpdate }: Props) => {
               key={tabItem.id}
               type="button"
               onClick={() => setViewTab(tabItem.id)}
-              className={`flex-1 py-2.5 px-3 rounded-xl font-body text-[12px] font-semibold transition-all flex items-center justify-center gap-1.5 ${
+              className={`py-2.5 px-2 rounded-xl font-body text-[12px] font-semibold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${
                 active
                   ? "bg-gold/15 text-gold border border-gold/30"
-                  : "text-primary-foreground/60 hover:text-primary-foreground"
+                  : "text-primary-foreground/65 hover:text-primary-foreground"
               }`}
             >
               <Icon className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">{tabItem.label}</span>
+              <span>{tabItem.label}</span>
             </button>
           );
         })}
@@ -1148,20 +1160,20 @@ const CaixaTab = ({ agendamentos, getClientName, onUpdate }: Props) => {
 
       {/* ═══════════ ABA 1: EXTRATO SIMPLIFICADO ═══════════ */}
       {viewTab === "extrato" && (
-        <section className="rounded-3xl border border-primary-foreground/[0.08] bg-primary-foreground/[0.025] p-4 sm:p-5 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+        <section className="rounded-3xl border border-primary-foreground/[0.08] bg-primary-foreground/[0.025] p-3.5 sm:p-5 space-y-3.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             {/* O que mostrar: Tudo | Entradas | Saídas */}
-            <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-[#252423] border border-primary-foreground/[0.08]">
+            <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-[#252423] border border-primary-foreground/[0.08]">
               {([
                 { id: "tudo" as const, label: "Tudo" },
-                { id: "entradas" as const, label: "Só Entradas" },
-                { id: "saidas" as const, label: "Só Saídas" },
+                { id: "entradas" as const, label: "Entradas" },
+                { id: "saidas" as const, label: "Saídas" },
               ]).map((f) => (
                 <button
                   key={f.id}
                   type="button"
                   onClick={() => setExtratoFilter(f.id)}
-                  className={`px-3 py-1.5 rounded-lg font-body text-[11.5px] font-medium transition-all ${
+                  className={`px-2.5 py-1.5 rounded-lg font-body text-[11.5px] font-medium transition-all text-center whitespace-nowrap ${
                     extratoFilter === f.id
                       ? "bg-gold/20 text-gold font-semibold"
                       : "text-primary-foreground/60 hover:text-primary-foreground"
@@ -1173,17 +1185,17 @@ const CaixaTab = ({ agendamentos, getClientName, onUpdate }: Props) => {
             </div>
 
             {/* Período rápido */}
-            <div className="inline-flex items-center gap-1.5">
+            <div className="grid grid-cols-3 gap-1.5">
               {([
                 { id: "hoje" as const, label: "Hoje" },
                 { id: "semana" as const, label: "7 dias" },
-                { id: "mes" as const, label: "Todo o mês" },
+                { id: "mes" as const, label: "Mês todo" },
               ]).map((p) => (
                 <button
                   key={p.id}
                   type="button"
                   onClick={() => setPeriod(p.id)}
-                  className={`px-3 py-1.5 rounded-xl border font-body text-[11.5px] font-medium transition-all ${
+                  className={`px-2.5 py-1.5 rounded-xl border font-body text-[11.5px] font-medium transition-all text-center whitespace-nowrap ${
                     period === p.id
                       ? "border-gold/40 bg-gold/15 text-gold font-semibold"
                       : "border-primary-foreground/[0.08] bg-primary-foreground/[0.03] text-primary-foreground/60 hover:text-primary-foreground"
@@ -1201,9 +1213,11 @@ const CaixaTab = ({ agendamentos, getClientName, onUpdate }: Props) => {
               const val = Number(item.valor_pago || 0);
               const parcelaInfo = !isGasto ? item._parcelaInfo : null;
               return (
-                <div
+                <button
+                  type="button"
                   key={item._movimentoId}
-                  className="flex items-start justify-between gap-2.5 p-3 rounded-2xl bg-[#252423] border border-primary-foreground/[0.07] hover:border-gold/25 transition-all"
+                  onClick={() => setSelectedExtratoItem(item)}
+                  className="w-full text-left flex items-start justify-between gap-2.5 p-3 rounded-2xl bg-[#252423] border border-primary-foreground/[0.07] hover:border-gold/35 hover:bg-[#2a2928] transition-all cursor-pointer"
                 >
                   <div className="flex items-start gap-2.5 min-w-0 flex-1">
                     <span
@@ -1223,7 +1237,7 @@ const CaixaTab = ({ agendamentos, getClientName, onUpdate }: Props) => {
                     </span>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <p className="font-body text-[13.5px] font-semibold text-primary-foreground truncate">
+                        <p className="font-body text-[13.5px] font-semibold text-primary-foreground break-words leading-snug">
                           {isGasto ? item.cliente_nome : getClientName(item.user_id, item.cliente_nome)}
                         </p>
                         {parcelaInfo?.badgeLabel && (
@@ -1240,12 +1254,12 @@ const CaixaTab = ({ agendamentos, getClientName, onUpdate }: Props) => {
                           </span>
                         )}
                       </div>
-                      <p className="font-body text-[11px] text-primary-foreground/60 truncate mt-0.5">
+                      <p className="font-body text-[11px] text-primary-foreground/65 break-words leading-snug mt-0.5">
                         {formatDateShort(item.data_fatura)} · {item.servico}
                         {!isGasto && item.forma_pagamento ? ` · ${item.forma_pagamento.toUpperCase()}` : ""}
                       </p>
                       {(parcelaInfo?.progressText || parcelaInfo?.refDateText || parcelaInfo?.observacaoText) && (
-                        <p className="font-body text-[10px] text-primary-foreground/45 truncate mt-0.5">
+                        <p className="font-body text-[10px] text-primary-foreground/50 break-words leading-snug mt-0.5">
                           {[parcelaInfo.progressText, parcelaInfo.refDateText, parcelaInfo.observacaoText]
                             .filter(Boolean)
                             .join(" · ")}
@@ -1254,27 +1268,30 @@ const CaixaTab = ({ agendamentos, getClientName, onUpdate }: Props) => {
                     </div>
                   </div>
 
-                  <div className="text-right shrink-0">
-                    <p
-                      className={`font-heading text-[14px] font-bold tabular-nums ${
-                        isGasto || val < 0 ? "text-rose" : "text-emerald-400"
-                      }`}
-                    >
-                      {val >= 0 ? `+ ${formatCurrency(val)}` : formatCurrency(val)}
-                    </p>
-                    <p className="font-body text-[10px] text-primary-foreground/45">
-                      {isGasto
-                        ? `Saída (${item._gasto_escopo})`
-                        : parcelaInfo?.kind === "parcela"
-                          ? "Parcela"
-                          : parcelaInfo?.kind === "quitacao"
-                            ? "Quitação"
-                            : val >= 0
-                              ? "Recebido"
-                              : "Estorno"}
-                    </p>
+                  <div className="text-right shrink-0 flex items-center gap-1.5">
+                    <div>
+                      <p
+                        className={`font-heading text-[14px] font-bold tabular-nums ${
+                          isGasto || val < 0 ? "text-rose" : "text-emerald-400"
+                        }`}
+                      >
+                        {val >= 0 ? `+ ${formatCurrency(val)}` : formatCurrency(val)}
+                      </p>
+                      <p className="font-body text-[10px] text-primary-foreground/45">
+                        {isGasto
+                          ? `Saída (${item._gasto_escopo})`
+                          : parcelaInfo?.kind === "parcela"
+                            ? "Parcela"
+                            : parcelaInfo?.kind === "quitacao"
+                              ? "Quitação"
+                              : val >= 0
+                                ? "Recebido"
+                                : "Estorno"}
+                      </p>
+                    </div>
+                    <ChevronRight className="w-3.5 h-3.5 text-primary-foreground/35 shrink-0" />
                   </div>
-                </div>
+                </button>
               );
             })}
 
@@ -1476,7 +1493,7 @@ const CaixaTab = ({ agendamentos, getClientName, onUpdate }: Props) => {
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <p className="font-body text-[13px] font-semibold text-primary-foreground truncate">
+                        <p className="font-body text-[13px] font-semibold text-primary-foreground break-words leading-snug">
                           {getClientName(linked?.user_id || "admin", m.cliente_nome || linked?.cliente_nome)}
                         </p>
                         {info.badgeLabel && (
@@ -1485,12 +1502,12 @@ const CaixaTab = ({ agendamentos, getClientName, onUpdate }: Props) => {
                           </span>
                         )}
                       </div>
-                      <p className="font-body text-[11px] text-primary-foreground/60 truncate mt-0.5">
+                      <p className="font-body text-[11px] text-primary-foreground/65 break-words leading-snug mt-0.5">
                         {m.descricao || linked?.servico || "Pagamento"}
                         {m.forma_pagamento ? ` · ${m.forma_pagamento.toUpperCase()}` : ""}
                       </p>
                       {(info.progressText || info.refDateText) && (
-                        <p className="font-body text-[10px] text-primary-foreground/45 truncate mt-0.5">
+                        <p className="font-body text-[10px] text-primary-foreground/50 break-words leading-snug mt-0.5">
                           {[info.progressText, info.refDateText].filter(Boolean).join(" · ")}
                         </p>
                       )}
@@ -1527,10 +1544,10 @@ const CaixaTab = ({ agendamentos, getClientName, onUpdate }: Props) => {
                           {a.horario.slice(0, 5)}
                         </span>
                         <div className="min-w-0 flex-1">
-                          <p className="font-body text-[13px] font-semibold text-primary-foreground truncate">
+                          <p className="font-body text-[13px] font-semibold text-primary-foreground break-words leading-snug">
                             {getClientName(a.user_id, a.cliente_nome)}
                           </p>
-                          <p className="font-body text-[11px] text-primary-foreground/55 truncate">{a.servico}</p>
+                          <p className="font-body text-[11px] text-primary-foreground/60 break-words leading-snug mt-0.5">{a.servico}</p>
                         </div>
                       </div>
                       <div className="text-right shrink-0">
@@ -2078,6 +2095,7 @@ const CaixaTab = ({ agendamentos, getClientName, onUpdate }: Props) => {
                     }
 
                     toast.success(`Retirada de ${formatCurrency(val)} registrada no Caixa!`);
+                    notifyCaixaUpdated();
                     setRetiradaOpen(false);
                     onUpdate?.();
                   } catch (err: any) {
@@ -2092,6 +2110,172 @@ const CaixaTab = ({ agendamentos, getClientName, onUpdate }: Props) => {
               </button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de detalhes completos do lançamento do Extrato */}
+      <Dialog open={!!selectedExtratoItem} onOpenChange={(open) => !open && setSelectedExtratoItem(null)}>
+        <DialogContent className="bg-charcoal border border-primary-foreground/[0.12] text-primary-foreground max-w-md rounded-3xl p-5">
+          {selectedExtratoItem && (() => {
+            const it = selectedExtratoItem;
+            const isGasto = Boolean(it._is_gasto);
+            const val = Number(it.valor_pago || 0);
+            const parcelaInfo = !isGasto ? it._parcelaInfo : null;
+            const titulo = isGasto ? it.cliente_nome : getClientName(it.user_id, it.cliente_nome);
+            const dataExtenso = it.data_fatura
+              ? new Date(it.data_fatura + "T12:00:00").toLocaleDateString("pt-BR", {
+                  weekday: "long",
+                  day: "2-digit",
+                  month: "long",
+                  year: "numeric",
+                })
+              : "—";
+            const horaOcorrido = it.ocorrido_em
+              ? new Date(it.ocorrido_em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+              : null;
+            const tipoLabel = isGasto
+              ? `Saída (${it._gasto_escopo})`
+              : parcelaInfo?.badgeLabel || (val >= 0 ? "Entrada" : "Estorno");
+            const observacao = isGasto
+              ? it._gasto_observacao
+              : (parcelaInfo?.observacaoText || it.observacao || "");
+
+            return (
+              <div className="space-y-4">
+                <DialogHeader>
+                  <DialogTitle className="font-heading text-lg font-semibold text-primary-foreground flex items-center gap-2.5">
+                    <span
+                      className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                        isGasto || val < 0
+                          ? "bg-rose/15 text-rose"
+                          : parcelaInfo?.kind === "parcela"
+                            ? "bg-amber-500/15 text-amber-300"
+                            : "bg-emerald-500/15 text-emerald-400"
+                      }`}
+                    >
+                      {isGasto || val < 0 ? (
+                        <ArrowUpRight className="w-4 h-4" />
+                      ) : (
+                        <ArrowDownLeft className="w-4 h-4" />
+                      )}
+                    </span>
+                    <span className="break-words text-left">{titulo}</span>
+                  </DialogTitle>
+                </DialogHeader>
+
+                <div
+                  className={`rounded-2xl border p-4 text-center ${
+                    isGasto || val < 0
+                      ? "bg-rose/[0.08] border-rose/25"
+                      : parcelaInfo?.kind === "parcela"
+                        ? "bg-amber-500/[0.08] border-amber-500/25"
+                        : "bg-emerald-500/[0.08] border-emerald-500/25"
+                  }`}
+                >
+                  <p className="font-body text-[10.5px] uppercase tracking-wider text-primary-foreground/65 font-semibold">
+                    {tipoLabel}
+                  </p>
+                  <p
+                    className={`font-heading text-3xl font-bold tabular-nums mt-1 ${
+                      isGasto || val < 0 ? "text-rose" : "text-emerald-400"
+                    }`}
+                  >
+                    {val >= 0 ? `+ ${formatCurrency(val)}` : formatCurrency(val)}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 rounded-2xl border border-primary-foreground/[0.08] bg-primary-foreground/[0.025] p-3.5 text-left">
+                  <div className="col-span-2">
+                    <p className="font-body text-[10px] uppercase tracking-wider text-primary-foreground/50">
+                      Data do lançamento
+                    </p>
+                    <p className="font-body text-[13px] font-medium text-primary-foreground capitalize mt-0.5">
+                      {dataExtenso}{horaOcorrido ? ` às ${horaOcorrido}` : ""}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="font-body text-[10px] uppercase tracking-wider text-primary-foreground/50">
+                      {isGasto ? "Categoria" : "Serviço"}
+                    </p>
+                    <p className="font-body text-[12.5px] font-medium text-primary-foreground break-words mt-0.5">
+                      {isGasto ? (it._gasto_categoria || it._gasto_escopo) : it.servico}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="font-body text-[10px] uppercase tracking-wider text-primary-foreground/50">
+                      {isGasto ? "Tipo" : "Forma de pagamento"}
+                    </p>
+                    <p className="font-body text-[12.5px] font-medium text-primary-foreground mt-0.5">
+                      {isGasto
+                        ? it._gasto_escopo
+                        : it.forma_pagamento
+                          ? it.forma_pagamento.toUpperCase()
+                          : "—"}
+                    </p>
+                  </div>
+
+                  {!isGasto && parcelaInfo?.progressText && (
+                    <div className="col-span-2">
+                      <p className="font-body text-[10px] uppercase tracking-wider text-primary-foreground/50">
+                        Andamento do pagamento
+                      </p>
+                      <p className="font-body text-[12.5px] font-medium text-gold mt-0.5">
+                        {parcelaInfo.progressText}
+                      </p>
+                    </div>
+                  )}
+
+                  {!isGasto && parcelaInfo?.refDateText && (
+                    <div className="col-span-2">
+                      <p className="font-body text-[10px] uppercase tracking-wider text-primary-foreground/50">
+                        Referência do atendimento
+                      </p>
+                      <p className="font-body text-[12.5px] text-primary-foreground/85 mt-0.5">
+                        {parcelaInfo.refDateText}
+                      </p>
+                    </div>
+                  )}
+
+                  {isGasto && it._gasto_vencimento && it._gasto_vencimento !== it.data_fatura && (
+                    <div className="col-span-2">
+                      <p className="font-body text-[10px] uppercase tracking-wider text-primary-foreground/50">
+                        Data de vencimento
+                      </p>
+                      <p className="font-body text-[12.5px] text-primary-foreground/85 mt-0.5">
+                        {formatDateShort(it._gasto_vencimento)}
+                      </p>
+                    </div>
+                  )}
+
+                  {observacao && (
+                    <div className="col-span-2">
+                      <p className="font-body text-[10px] uppercase tracking-wider text-primary-foreground/50">
+                        Observação
+                      </p>
+                      <p className="font-body text-[12.5px] text-primary-foreground/85 break-words mt-0.5">
+                        {observacao}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="col-span-2 pt-1 border-t border-primary-foreground/[0.06] flex items-center justify-between text-[10.5px] text-primary-foreground/45 font-body">
+                    <span>ID: {String(it.id || it._movimentoId).slice(0, 12)}</span>
+                    <span>{it.origem ? `Origem: ${it.origem}` : isGasto ? "Despesa / Caixa" : "Atendimento"}</span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedExtratoItem(null)}
+                  className="w-full py-2.5 rounded-xl bg-primary-foreground/[0.08] hover:bg-primary-foreground/[0.14] text-primary-foreground font-body text-[13px] font-semibold transition-all"
+                >
+                  Fechar
+                </button>
+              </div>
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </div>

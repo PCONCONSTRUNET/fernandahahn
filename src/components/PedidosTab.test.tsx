@@ -177,6 +177,54 @@ describe("CaixaTab configuração de comissão e dia de fechamento", () => {
     await waitFor(() => {
       expect(screen.getByText(/Saída \(Comissão\)/i)).toBeInTheDocument();
     });
+
+    // Ao clicar no lançamento do extrato, abre o modal completo com data e detalhes
+    fireEvent.click(screen.getByText(/Saída \(Comissão\)/i));
+    await waitFor(() => {
+      expect(screen.getByText(/Data do lançamento/i)).toBeInTheDocument();
+    });
+  });
+
+  it("exibe retiradas de comissão também na aba Pagamentos e abre detalhes completos", async () => {
+    const hoje = (() => {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    })();
+
+    globalThis.localStorage.setItem(
+      "studio_caixa_retiradas_preview",
+      JSON.stringify([
+        {
+          id: "ret-test-1",
+          descricao: "Retirada de Comissão",
+          observacao: "Retirada de comissão pelo Caixa",
+          valor: 100,
+          categoria: "Comissão",
+          tipo: "comissao",
+          data_vencimento: hoje,
+          data_pagamento: hoje,
+          pago: true,
+        },
+      ])
+    );
+
+    render(
+      <ConfirmProvider>
+        <PagamentosTab
+          agendamentos={[]}
+          getClientName={(_, nome) => nome || "Cliente"}
+        />
+      </ConfirmProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Retiradas de Comissão \(1\)/i)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText(/Retirada de Comissão/i));
+    await waitFor(() => {
+      expect(screen.getByText(/Data da retirada/i)).toBeInTheDocument();
+    });
   });
 });
 
