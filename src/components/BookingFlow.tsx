@@ -1,11 +1,17 @@
 import { useState, useEffect } from "react";
-import { ArrowLeft, Calendar, Clock, CheckCircle2, Copy, Check, CreditCard, FileText, Loader2, ExternalLink, Info } from "lucide-react";
+import { ArrowLeft, Calendar, Clock, CheckCircle2, Copy, Check, CreditCard, FileText, Loader2, ExternalLink } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import pixIcon from "@/assets/pix-icon.png";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import WhatsAppIcon from "@/components/icons/WhatsAppIcon";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { sendPush, showLocalNotification } from "@/lib/push-notify";
+import {
+  DEFAULT_COMPROVANTE_WHATSAPP,
+  DEFAULT_PIX_MERCHANT_NAME,
+  buildPixComprovanteWhatsappUrl,
+  generatePixPayload,
+} from "@/lib/pix";
 
 interface BookingFlowProps {
   service: string;
@@ -55,46 +61,19 @@ const BookingFlow = ({ service, variation, onBack, onConfirm }: BookingFlowProps
   const [paymentExpiry, setPaymentExpiry] = useState<number>(0);
   const [timeLeft, setTimeLeft] = useState<number>(300); // 5 min in seconds
   const [observacao, setObservacao] = useState<string>("");
-
-  const PIX_KEY = "+5548999779829";
-  const PIX_NAME = "FERNANDA HAHN";
-  const PIX_CITY = "BRASIL";
-
-  const generatePixPayload = (amount: number) => {
-    const pad = (id: string, val: string) => {
-      const len = val.length.toString().padStart(2, "0");
-      return `${id}${len}${val}`;
-    };
-
-    const gui = pad("00", "br.gov.bcb.pix");
-    const key = pad("01", PIX_KEY);
-    const merchantAccount = pad("26", gui + key);
-    const mcc = pad("52", "0000");
-    const currency = pad("53", "986");
-    const amountStr = pad("54", amount.toFixed(2));
-    const country = pad("58", "BR");
-    const name = pad("59", PIX_NAME);
-    const city = pad("60", PIX_CITY);
-    const txid = pad("05", "***");
-    const additionalData = pad("62", txid);
-
-    const payloadWithoutCRC = pad("00", "01") + merchantAccount + mcc + currency + amountStr + country + name + city + additionalData + "6304";
-
-    // CRC16-CCITT
-    let crc = 0xFFFF;
-    for (let i = 0; i < payloadWithoutCRC.length; i++) {
-      crc ^= payloadWithoutCRC.charCodeAt(i) << 8;
-      for (let j = 0; j < 8; j++) {
-        if (crc & 0x8000) {
-          crc = (crc << 1) ^ 0x1021;
-        } else {
-          crc <<= 1;
-        }
-        crc &= 0xFFFF;
-      }
-    }
-    return payloadWithoutCRC + crc.toString(16).toUpperCase().padStart(4, "0");
-  };
+  const [hasOnlineGateway, setHasOnlineGateway] = useState(false);
+  const [pixDiretoConfig, setPixDiretoConfig] = useState<{
+    enabled: boolean;
+    key: string;
+    merchantName: string;
+    whatsappComprovante: string;
+  }>({
+    enabled: false,
+    key: "",
+    merchantName: DEFAULT_PIX_MERCHANT_NAME,
+    whatsappComprovante: DEFAULT_COMPROVANTE_WHATSAPP,
+  });
+  const [clientDisplayName, setClientDisplayName] = useState<string>("");
 
 
   const [businessHours, setBusinessHours] = useState<Record<number, { open: string; close: string } | null>>({});
@@ -126,19 +105,42 @@ const BookingFlow = ({ service, variation, onBack, onConfirm }: BookingFlowProps
       if ((data as any)?.descricao) setServiceDescricao((data as any).descricao);
       if ((data as any)?.categoria) setServiceCategoria((data as any).categoria);
     });
-    // Load active gateway payment methods
-    (supabase.from as any)("gateway_configs").select("gateway, pix_enabled, cartao_enabled, boleto_enabled").eq("ativo", true).then(({ data }: any) => {
-      if (data && data.length > 0) {
-        const methods = { pix: false, cartao: false, boleto: false };
-        (data as GatewayInfo[]).forEach((gw) => {
-          if (gw.pix_enabled) methods.pix = true;
-          if (gw.cartao_enabled) methods.cartao = true;
-          if (gw.boleto_enabled) methods.boleto = true;
+    // Load gateway configs (online gateways + PIX Direto)
+    (supabase.from as any)("gateway_configs")
+      .select("gateway, access_token, public_key, whatsapp_comprovante, ativo, pix_enabled, cartao_enabled, boleto_enabled")
+      .then(({ data }: any) => {
+        if (!data || data.length === 0) return;
+
+        const pixDiretoRow = data.find((r: any) => r.gateway === "pix_direto");
+        const pixKey = (pixDiretoRow?.access_token || "").trim();
+        const pixEnabled = Boolean(pixDiretoRow?.ativo && pixKey);
+        setPixDiretoConfig({
+          enabled: pixEnabled,
+          key: pixKey,
+          merchantName: (pixDiretoRow?.public_key || "").trim() || DEFAULT_PIX_MERCHANT_NAME,
+          whatsappComprovante: (pixDiretoRow?.whatsapp_comprovante || "").trim() || DEFAULT_COMPROVANTE_WHATSAPP,
         });
-        setAvailableMethods(methods);
-        setGatewayInfo(data[0]);
-      }
-    });
+
+        const activeOnline = data.filter(
+          (r: any) => r.gateway !== "pix_direto" && r.ativo && (r.access_token || "").trim()
+        );
+        if (activeOnline.length > 0) {
+          setHasOnlineGateway(true);
+          const methods = { pix: false, cartao: false, boleto: false };
+          (activeOnline as GatewayInfo[]).forEach((gw) => {
+            if (gw.pix_enabled) methods.pix = true;
+            if (gw.cartao_enabled) methods.cartao = true;
+            if (gw.boleto_enabled) methods.boleto = true;
+          });
+          setAvailableMethods(methods);
+          setGatewayInfo(activeOnline[0]);
+          if (!methods.pix) setPaymentChoice("recepcao");
+        } else {
+          setHasOnlineGateway(false);
+          setAvailableMethods({ pix: pixEnabled, cartao: false, boleto: false });
+          if (!pixEnabled) setPaymentChoice("recepcao");
+        }
+      });
     loadBookedSlots();
 
     const ch = supabase
@@ -292,7 +294,11 @@ const BookingFlow = ({ service, variation, onBack, onConfirm }: BookingFlowProps
   };
 
   const paymentAmount = getPaymentAmount();
-  const pixPayload = generatePixPayload(paymentAmount);
+  const pixPayload = generatePixPayload({
+    key: pixDiretoConfig.key,
+    amount: paymentAmount,
+    merchantName: pixDiretoConfig.merchantName,
+  });
 
   const handleCopyCode = async (text: string) => {
     await navigator.clipboard.writeText(text);
@@ -420,8 +426,7 @@ const BookingFlow = ({ service, variation, onBack, onConfirm }: BookingFlowProps
   };
 
   const handleGoToPayment = async () => {
-    // Serviço gratuito (R$ 0): não passa pelo gateway de pagamento.
-    // Cria o agendamento já confirmado, igual ao fluxo de recepção.
+    // Serviço gratuito (R$ 0): cria o agendamento já confirmado.
     if (numericPrice === 0 || paymentAmount === 0) {
       setPaymentLoading(true);
       const id = await createAgendamento("pix");
@@ -436,11 +441,20 @@ const BookingFlow = ({ service, variation, onBack, onConfirm }: BookingFlowProps
       });
       return;
     }
+
+    // Sem gateway online → usa PIX Direto com a chave configurada na aba Gateway:
+    // o agendamento já entra como "confirmado" com valor_pago = 0 (pagamento pendente)
+    // e abre a tela com QR Code + Copia e Cola + "Enviar comprovante no WhatsApp".
+    if (!hasOnlineGateway) {
+      await handleConfirmPixAgora();
+      return;
+    }
+
     handleCreatePayment();
   };
 
-  // Cria agendamento e dispara notificações; status sempre "confirmado".
-  // forma: "pendente" → pagar na recepção. forma: "pix" → mostra QR local.
+  // Cria agendamento e dispara notificações; status sempre "confirmado" e valor_pago = 0 (pendente).
+  // forma: "pendente" → pagar na recepção. forma: "pix" → PIX Direto (comprovante via WhatsApp).
   const createAgendamento = async (forma: "pix" | "pendente") => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
@@ -474,16 +488,18 @@ const BookingFlow = ({ service, variation, onBack, onConfirm }: BookingFlowProps
         .select("nome, whatsapp")
         .eq("id", user.id)
         .maybeSingle();
-      const formaTxt = forma === "pix" ? "(PIX online)" : "(pagar na recepção)";
+      const nomeCli = prof?.nome || user.user_metadata?.nome || "Cliente";
+      setClientDisplayName(nomeCli);
+      const formaTxt = forma === "pix" ? "(PIX Direto · pendente)" : "(pagar na recepção)";
       void sendPush({
         role: "admin",
         title: "🔔 Novo Agendamento!",
-        message: `${prof?.nome || "Cliente"} — ${service} em ${selectedDate} às ${selectedTime} ${formaTxt}`,
+        message: `${nomeCli} — ${service} em ${selectedDate} às ${selectedTime} ${formaTxt}`,
         url: "/admin/",
       }).catch((e) => console.warn("admin push failed", e));
 
       const clienteMsg = forma === "pix"
-        ? `${service} em ${selectedDate} às ${selectedTime}.`
+        ? `${service} em ${selectedDate} às ${selectedTime}. Envie o comprovante do PIX pelo WhatsApp.`
         : `${service} em ${selectedDate} às ${selectedTime}. Pagamento na recepção.`;
       await sendPush({
         role: "cliente",
@@ -494,7 +510,7 @@ const BookingFlow = ({ service, variation, onBack, onConfirm }: BookingFlowProps
       });
       showLocalNotification("✅ Agendamento confirmado!", clienteMsg);
     } catch (e) {
-      console.log("notify webhook skipped", e);
+      console.log("notify skipped", e);
     }
 
     return agData.id;
@@ -515,6 +531,10 @@ const BookingFlow = ({ service, variation, onBack, onConfirm }: BookingFlowProps
   };
 
   const handleConfirmPixAgora = async () => {
+    if (!pixDiretoConfig.key) {
+      toast.error("Chave PIX não configurada. Escolha pagar na recepção.");
+      return;
+    }
     setPaymentLoading(true);
     const id = await createAgendamento("pix");
     if (!id) {
@@ -522,8 +542,7 @@ const BookingFlow = ({ service, variation, onBack, onConfirm }: BookingFlowProps
       return;
     }
     setPaymentData({ gateway: "local", method: "pix" });
-    setPaymentExpiry(Date.now() + 5 * 60 * 1000);
-    setTimeLeft(300);
+    setPaymentExpiry(0); // Não expira nem cancela: agendamento já está confirmado (pagamento pendente)
     setStep("payment");
     setPaymentLoading(false);
   };
@@ -611,25 +630,56 @@ const BookingFlow = ({ service, variation, onBack, onConfirm }: BookingFlowProps
             Como deseja pagar? <span className="text-rose normal-case tracking-normal text-[11px] font-normal">(toque para escolher)</span>
           </p>
           <div className="space-y-2.5">
-            <button
-              type="button"
-              onClick={() => setPaymentChoice("pix")}
-              aria-pressed={paymentChoice === "pix"}
-              className={`ios-press w-full flex items-center gap-3 p-3.5 rounded-2xl border-2 transition-all ${
-                paymentChoice === "pix"
-                  ? "border-gold bg-gold/10 shadow-[0_4px_18px_-6px_hsl(22_58%_63%/0.45)]"
-                  : "border-border/60 bg-card hover:border-gold/40 hover:bg-gold/5"
-              }`}
-            >
-              <img src={pixIcon} alt="PIX" className="w-6 h-6" />
-              <div className="text-left">
-                <p className="font-body text-[13px] font-semibold text-foreground">Pagar agora por PIX</p>
-                <p className="font-body text-[11px] text-muted-foreground">QR Code instantâneo</p>
+            {(hasOnlineGateway ? availableMethods.pix : pixDiretoConfig.enabled) && (
+              <button
+                type="button"
+                onClick={() => setPaymentChoice("pix")}
+                aria-pressed={paymentChoice === "pix"}
+                className={`ios-press w-full flex items-center gap-3 p-3.5 rounded-2xl border-2 transition-all ${
+                  paymentChoice === "pix"
+                    ? "border-gold bg-gold/10 shadow-[0_4px_18px_-6px_hsl(22_58%_63%/0.45)]"
+                    : "border-border/60 bg-card hover:border-gold/40 hover:bg-gold/5"
+                }`}
+              >
+                <img src={pixIcon} alt="PIX" className="w-6 h-6" />
+                <div className="text-left">
+                  <p className="font-body text-[13px] font-semibold text-foreground">Pagar agora por PIX</p>
+                  <p className="font-body text-[11px] text-muted-foreground">QR Code + Copia e Cola</p>
+                </div>
+                <div className={`ml-auto w-5 h-5 rounded-full border-2 flex items-center justify-center ${paymentChoice === "pix" ? "border-gold bg-gold" : "border-muted-foreground/40"}`}>
+                  {paymentChoice === "pix" && <Check className="w-3 h-3 text-charcoal" strokeWidth={3} />}
+                </div>
+              </button>
+            )}
+
+            {paymentChoice === "pix" && requiresDeposit && (hasOnlineGateway ? availableMethods.pix : pixDiretoConfig.enabled) && (
+              <div className="grid grid-cols-2 gap-2 pt-0.5">
+                <button
+                  type="button"
+                  onClick={() => setPaymentMode("deposit")}
+                  className={`rounded-xl border p-2.5 text-left transition-all ${
+                    paymentMode === "deposit"
+                      ? "border-gold bg-gold/10 text-foreground"
+                      : "border-border/60 bg-card text-muted-foreground"
+                  }`}
+                >
+                  <p className="font-body text-[11px] font-semibold">Sinal (30%)</p>
+                  <p className="font-heading text-[13px] font-bold text-gold">{depositAmount}</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaymentMode("full")}
+                  className={`rounded-xl border p-2.5 text-left transition-all ${
+                    paymentMode === "full"
+                      ? "border-gold bg-gold/10 text-foreground"
+                      : "border-border/60 bg-card text-muted-foreground"
+                  }`}
+                >
+                  <p className="font-body text-[11px] font-semibold">Valor total</p>
+                  <p className="font-heading text-[13px] font-bold text-gold">{price}</p>
+                </button>
               </div>
-              <div className={`ml-auto w-5 h-5 rounded-full border-2 flex items-center justify-center ${paymentChoice === "pix" ? "border-gold bg-gold" : "border-muted-foreground/40"}`}>
-                {paymentChoice === "pix" && <Check className="w-3 h-3 text-charcoal" strokeWidth={3} />}
-              </div>
-            </button>
+            )}
 
             <button
               type="button"
@@ -765,28 +815,45 @@ const BookingFlow = ({ service, variation, onBack, onConfirm }: BookingFlowProps
       );
     }
 
-    // PIX (gateway or local)
+    // PIX (gateway or PIX Direto)
+    const comprovanteWhatsappUrl = buildPixComprovanteWhatsappUrl({
+      whatsappDestino: pixDiretoConfig.whatsappComprovante,
+      clienteNome: clientDisplayName,
+      servico: service,
+      variacao: variation,
+      data: selectedDate,
+      horario: selectedTime,
+      valor: paymentAmount,
+    });
+
     return (
       <section className="min-h-screen bg-background px-6 py-8 flex flex-col lg:items-center lg:px-8">
-        <button onClick={async () => {
-            if (agendamentoId) {
-              await supabase.from("agendamentos").update({ status: "cancelado" }).eq("id", agendamentoId);
-            }
-            setAgendamentoId(null);
-            setPaymentData(null);
-            setStep("confirm");
-          }} className="ios-press flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-6">
-          <ArrowLeft className="w-4 h-4" /><span className="font-body text-[14px]">Voltar</span>
-        </button>
+        {!isLocalPix && (
+          <button onClick={async () => {
+              if (agendamentoId) {
+                await supabase.from("agendamentos").update({ status: "cancelado" }).eq("id", agendamentoId);
+              }
+              setAgendamentoId(null);
+              setPaymentData(null);
+              setStep("confirm");
+            }} className="ios-press flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-6">
+            <ArrowLeft className="w-4 h-4" /><span className="font-body text-[14px]">Voltar</span>
+          </button>
+        )}
         <div className="flex-1 flex flex-col items-center text-center animate-fade-in">
           <div className="w-14 h-14 rounded-full bg-gold/10 flex items-center justify-center mb-4">
             <img src={pixIcon} alt="PIX" className="w-7 h-7" />
           </div>
           <h2 className="font-heading text-2xl font-semibold text-foreground mb-1">Pagamento PIX</h2>
-          {/* Timer */}
-          <div className={`mt-2 mb-3 px-4 py-2 rounded-full font-body text-[13px] font-semibold ${timerUrgent ? "bg-destructive/20 text-destructive animate-pulse" : "bg-gold/10 text-gold"}`}>
-            ⏱ Expira em {timerStr}
-          </div>
+          {isLocalPix ? (
+            <div className="mt-2 mb-3 px-4 py-1.5 rounded-full font-body text-[12px] font-semibold bg-emerald-500/15 border border-emerald-500/30 text-emerald-500">
+              ✓ Agendamento Confirmado · Pagamento Pendente
+            </div>
+          ) : (
+            <div className={`mt-2 mb-3 px-4 py-2 rounded-full font-body text-[13px] font-semibold ${timerUrgent ? "bg-destructive/20 text-destructive animate-pulse" : "bg-gold/10 text-gold"}`}>
+              ⏱ Expira em {timerStr}
+            </div>
+          )}
           <p className="font-body text-[13px] text-muted-foreground mb-5">{paymentLabel}</p>
           <div className="bg-white p-5 rounded-3xl shadow-[0_4px_24px_-6px_rgba(0,0,0,0.1)] mb-6">
             {paymentData?.qr_code_base64 ? (
@@ -819,27 +886,39 @@ const BookingFlow = ({ service, variation, onBack, onConfirm }: BookingFlowProps
           ) : (
             <div className="mt-6 p-3.5 rounded-2xl bg-secondary/30 backdrop-blur-sm border border-border/30 max-w-sm">
               <p className="font-body text-[12px] text-muted-foreground leading-relaxed">
-                Após o pagamento, clique em "Confirmar" abaixo.
+                Seu horário já está confirmado! Após realizar o PIX, envie o comprovante no WhatsApp para darmos baixa no pagamento.
               </p>
             </div>
           )}
         </div>
-        <div className="pt-6 pb-4">
+        <div className="pt-6 pb-4 w-full max-w-sm mx-auto space-y-2.5">
           {isLocalPix ? (
-            <button onClick={async () => {
-              // Mark local PIX agendamento as confirmado
-              if (agendamentoId) {
-                await supabase.from("agendamentos").update({
-                  status: "confirmado",
-                  valor_pago: paymentAmount,
-                  paid_at: new Date().toISOString(),
-                }).eq("id", agendamentoId);
-              }
-              onConfirm({ date: selectedDate, time: selectedTime, price: numericPrice, paidAmount: paymentAmount, durationMinutes: serviceDuration });
-            }}
-              className="ios-press w-full py-4 rounded-full bg-rose text-primary-foreground font-body font-semibold text-[15px] tracking-wide shadow-[0_4px_20px_-4px_hsl(340_30%_50%/0.4)] transition-all">
-              Confirmar Agendamento
-            </button>
+            <>
+              <a
+                href={comprovanteWhatsappUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="ios-press w-full py-4 rounded-full bg-[#25d366] text-white font-body font-semibold text-[15px] tracking-wide shadow-[0_4px_20px_-4px_rgba(37,211,102,0.45)] transition-all flex items-center justify-center gap-2.5 hover:brightness-105"
+              >
+                <WhatsAppIcon className="w-5 h-5" />
+                Enviar comprovante no WhatsApp
+              </a>
+              <button
+                type="button"
+                onClick={() =>
+                  onConfirm({
+                    date: selectedDate,
+                    time: selectedTime,
+                    price: numericPrice,
+                    paidAmount: 0,
+                    durationMinutes: serviceDuration,
+                  })
+                }
+                className="ios-press w-full py-3.5 rounded-full bg-card border border-border text-foreground font-body font-medium text-[14px] transition-all hover:bg-secondary/40"
+              >
+                Concluir agendamento
+              </button>
+            </>
           ) : (
             <p className="text-center font-body text-[12px] text-muted-foreground">
               O agendamento será confirmado automaticamente após o pagamento

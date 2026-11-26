@@ -464,6 +464,7 @@ export type Database = {
           public_key: string | null
           updated_at: string
           webhook_url: string | null
+          whatsapp_comprovante: string | null
         }
         Insert: {
           access_token?: string | null
@@ -477,6 +478,7 @@ export type Database = {
           public_key?: string | null
           updated_at?: string
           webhook_url?: string | null
+          whatsapp_comprovante?: string | null
         }
         Update: {
           access_token?: string | null
@@ -490,6 +492,7 @@ export type Database = {
           public_key?: string | null
           updated_at?: string
           webhook_url?: string | null
+          whatsapp_comprovante?: string | null
         }
         Relationships: []
       }
