@@ -379,7 +379,7 @@ const ServicosTab = ({
       title: "Excluir Serviço",
       description: `Deseja remover "${s.name}" (${formatBRL(s.price)}) do catálogo?`,
       variant: "destructive",
-      confirmLabel: "Excluir",
+      confirmText: "Excluir",
       onConfirm: async () => {
         if (isSupabaseConfigured) {
           const { error } = await supabase.from(tableName).delete().eq("id", s.id);

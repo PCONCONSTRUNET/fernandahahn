@@ -86,7 +86,7 @@ export default function NovaTransacaoModal({ open, onOpenChange, onSuccess, init
 
         const payload = {
           user_id: userId,
-          cliente_nome: "Registro de Pagamento",
+          cliente_nome: descricao.trim() || "Registro de Pagamento",
           servico: "Entrada Manual",
           variacao: descricao.trim(),
           valor: valNum,

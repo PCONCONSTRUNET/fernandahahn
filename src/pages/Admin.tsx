@@ -1629,8 +1629,10 @@ const AdminPanel = ({ onLogout }: { onLogout: () => void }) => {
                 </SheetTrigger>
                 <SheetContent
                   side="left"
+                  aria-describedby={undefined}
                   className="w-[82vw] max-w-[18rem] overflow-y-auto border-primary-foreground/[0.06] bg-charcoal p-0 flex flex-col"
                 >
+                  <SheetTitle className="sr-only">Menu administrativo</SheetTitle>
                   <div className="px-5 pt-5 pb-4 border-b border-primary-foreground/[0.06]">
                     <h2 className="font-heading text-[16px] font-semibold text-primary-foreground">Admin</h2>
                     <p className="font-body text-[11px] text-primary-foreground/30">Fernanda Hahn</p>

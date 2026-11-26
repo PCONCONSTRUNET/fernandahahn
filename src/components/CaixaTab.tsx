@@ -500,7 +500,10 @@ const CaixaTab = ({ agendamentos, getClientName, onUpdate }: Props) => {
           data_agendamento: m.data_atendimento || linked?.data_agendamento || m.data_pagamento,
           data_fatura: m.data_pagamento,
           forma_pagamento: m.forma_pagamento || linked?.forma_pagamento,
-          cliente_nome: m.cliente_nome || linked?.cliente_nome,
+          cliente_nome:
+            (m.cliente_nome === "Registro de Pagamento" || (!m.cliente_nome && linked?.cliente_nome === "Registro de Pagamento")) && linked?.variacao
+              ? linked.variacao
+              : (m.cliente_nome || linked?.cliente_nome),
           servico: m.tipo === "gorjeta" ? "Gorjeta" : m.descricao || linked?.servico || "Pagamento",
           user_id: linked?.user_id || "admin",
           inferido: m.inferido,
